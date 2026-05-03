@@ -17,9 +17,6 @@
         pkgs = nixpkgs.legacyPackages.${system};
         extraPkgs = with pkgs; [
           deno
-          prettierd
-          typescript-language-server
-          eslint
 
           # TODO: why isn't this available in the agent env?
           rtk

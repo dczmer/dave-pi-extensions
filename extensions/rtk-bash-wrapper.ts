@@ -35,6 +35,22 @@ export default function (pi: ExtensionAPI) {
 				return;
 			}
 
+			// Handle compound commands
+			const hasAnd = originalCommand.includes(" && ");
+			const hasOr = originalCommand.includes(" || ");
+
+			if (hasAnd || hasOr) {
+				// Only handle 'cd $PATH && $COMMAND' pattern
+				if (originalCommand.startsWith("cd ") && hasAnd) {
+					const parts = originalCommand.split(" && ");
+					if (parts.length === 2) {
+						event.input.command = `${parts[0]} && rtk ${parts[1]}`;
+					}
+				}
+				// Other compound commands: skip wrapping
+				return;
+			}
+
 			// Wrap command with rtk
 			event.input.command = `rtk ${originalCommand}`;
 		}
