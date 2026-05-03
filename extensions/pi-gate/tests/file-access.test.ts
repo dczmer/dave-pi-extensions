@@ -9,20 +9,20 @@ import { approveExternal, resetSessionState } from "../session.ts";
 
 function createMockCtx() {
   const confirmQueue: boolean[] = [];
-  const inputQueue: (string | null)[] = [];
+  const editorQueue: (string | null)[] = [];
   const notifications: Array<{ message: string; level: string }> = [];
 
   const ctx = {
     ui: {
       confirm: () => Promise.resolve(confirmQueue.shift() ?? false),
-      input: () => Promise.resolve(inputQueue.shift() ?? null),
+      editor: () => Promise.resolve(editorQueue.shift() ?? null),
       notify: (message: string, level: string) => {
         notifications.push({ message, level });
       },
     },
     _notifications: notifications,
     queueConfirm: (v: boolean) => confirmQueue.push(v),
-    queueInput: (v: string | null) => inputQueue.push(v),
+    queueEditor: (v: string | null) => editorQueue.push(v),
   };
 
   return ctx as typeof ctx & Parameters<typeof checkFileAccess>[3];
@@ -92,7 +92,7 @@ test("external file approved by user and persisted to config", async () => {
     const ctx = createMockCtx();
     ctx.queueConfirm(true);
     ctx.queueConfirm(true);
-    ctx.queueInput("/tmp/*");
+    ctx.queueEditor("/tmp/*");
 
     const result = await checkFileAccess("/tmp/foo.txt", dir, config, ctx, configPath);
     strictEqual(result, true);

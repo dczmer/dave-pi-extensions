@@ -4,6 +4,7 @@ export interface ExtensionContext {
   ui: {
     confirm(title: string, message: string): Promise<boolean>;
     input(title: string, placeholder?: string): Promise<string | undefined>;
+    editor(title: string, prefill?: string): Promise<string | undefined>;
     notify(message: string, type?: "info" | "warning" | "error"): void;
   };
 }
@@ -20,7 +21,7 @@ export async function promptPattern(
   description: string,
   ctx: ExtensionContext,
 ): Promise<string | null> {
-  const result = await ctx.ui.input(`pi-gate: ${description}`, suggestion);
+  const result = await ctx.ui.editor(`pi-gate: ${description}`, suggestion);
   if (result === undefined) return null;
   const trimmed = result.trim();
   return trimmed.length > 0 ? trimmed : null;
@@ -29,9 +30,11 @@ export async function promptPattern(
 export async function confirmAddToConfig(
   section: ConfigSection,
   ctx: ExtensionContext,
+  value?: string,
 ): Promise<boolean> {
+  const valueInfo = value ? `\n\nValue: "${value}"` : "";
   return await ctx.ui.confirm(
     "pi-gate",
-    `Add to pi-gate.json -> "${section}"?`,
+    `Add to pi-gate.json -> "${section}"?${valueInfo}`,
   );
 }

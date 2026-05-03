@@ -7,6 +7,12 @@ import { checkFileAccess } from "./file-access.ts";
 import { promptAllowDeny, promptPattern, confirmAddToConfig } from "./prompts.ts";
 import type { ExtensionContext } from "./prompts.ts";
 
+/** Strip leading `cd /path && ` or `cd /path && COMMAND` prefix. */
+function extractCoreCommand(command: string): string {
+  const cdPrefixRegex = /^cd\s+\/[^\s&]+\s*&&\s*/;
+  return command.replace(cdPrefixRegex, "");
+}
+
 export async function checkBashCommand(
   command: string,
   cwd: string,
@@ -14,21 +20,22 @@ export async function checkBashCommand(
   ctx: ExtensionContext,
   configPath?: string,
 ): Promise<boolean> {
-  // Step 1: Check command pattern
+  // Step 1: Check command pattern (ignore cd prefix for matching)
+  const coreCommand = extractCoreCommand(command);
   const sessionState = getSessionState();
   const allPatterns = [...config.bashAllow, ...sessionState.approvedBashPatterns];
-  const matchedPattern = allPatterns.find((p) => matchesGlob(command, p));
+  const matchedPattern = allPatterns.find((p) => matchesGlob(coreCommand, p));
 
   if (!matchedPattern) {
     const allowed = await promptAllowDeny(`Allow bash command: ${command}?`, ctx);
     if (!allowed) return false;
 
-    const pattern = await promptPattern(command, "Command pattern", ctx);
+    const pattern = await promptPattern(coreCommand, "Command pattern", ctx);
     if (!pattern) return false;
 
     approveBashPattern(pattern);
 
-    if (await confirmAddToConfig("bashAllow", ctx)) {
+    if (await confirmAddToConfig("bashAllow", ctx, pattern)) {
       config.bashAllow.push(pattern);
       saveConfig(config, configPath);
     }

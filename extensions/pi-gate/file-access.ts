@@ -38,16 +38,14 @@ export async function checkFileAccess(
 
     approveExternal(normalized);
 
-    if (await confirmAddToConfig("externalAllow", ctx)) {
-      const pattern = await promptPattern(
-        filePath,
-        "External path pattern",
-        ctx,
-      );
-      if (pattern) {
-        config.externalAllow.push(pattern);
-        saveConfig(config, configPath);
-      }
+    const pattern = await promptPattern(
+      filePath,
+      "External path pattern",
+      ctx,
+    );
+    if (pattern && await confirmAddToConfig("externalAllow", ctx, pattern)) {
+      config.externalAllow.push(pattern);
+      saveConfig(config, configPath);
     }
     return true;
   }

@@ -9,6 +9,7 @@ import {
 function createMockCtx(ui: {
   confirm?: (title: string, message: string) => Promise<boolean>;
   input?: (title: string, placeholder?: string) => Promise<string | undefined>;
+  editor?: (title: string, prefill?: string) => Promise<string | undefined>;
 }) {
   return { ui } as unknown as Parameters<typeof promptAllowDeny>[1];
 }
@@ -31,7 +32,7 @@ test("promptAllowDeny returns false when user selects Deny", async () => {
 
 test("promptPattern returns edited value", async () => {
   const ctx = createMockCtx({
-    input: () => Promise.resolve("/tmp/*"),
+    editor: () => Promise.resolve("/tmp/*"),
   });
   const result = await promptPattern("/tmp/test.txt", "External path pattern", ctx);
   strictEqual(result, "/tmp/*");
@@ -39,7 +40,7 @@ test("promptPattern returns edited value", async () => {
 
 test("promptPattern returns null when input cleared", async () => {
   const ctx = createMockCtx({
-    input: () => Promise.resolve(""),
+    editor: () => Promise.resolve(""),
   });
   const result = await promptPattern("/tmp/test.txt", "External path pattern", ctx);
   strictEqual(result, null);
@@ -47,7 +48,7 @@ test("promptPattern returns null when input cleared", async () => {
 
 test("promptPattern returns null on cancel", async () => {
   const ctx = createMockCtx({
-    input: () => Promise.resolve(undefined),
+    editor: () => Promise.resolve(undefined),
   });
   const result = await promptPattern("/tmp/test.txt", "External path pattern", ctx);
   strictEqual(result, null);
@@ -71,7 +72,7 @@ test("confirmAddToConfig returns false when user selects No", async () => {
 
 test("promptPattern trims whitespace from input", async () => {
   const ctx = createMockCtx({
-    input: () => Promise.resolve("  /tmp/*  "),
+    editor: () => Promise.resolve("  /tmp/*  "),
   });
   const result = await promptPattern("/tmp/test.txt", "External path pattern", ctx);
   strictEqual(result, "/tmp/*");
@@ -79,7 +80,7 @@ test("promptPattern trims whitespace from input", async () => {
 
 test("promptPattern empty string after trim returns null", async () => {
   const ctx = createMockCtx({
-    input: () => Promise.resolve("   "),
+    editor: () => Promise.resolve("   "),
   });
   const result = await promptPattern("/tmp/test.txt", "External path pattern", ctx);
   strictEqual(result, null);

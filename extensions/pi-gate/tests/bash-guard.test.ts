@@ -9,20 +9,20 @@ import { resetSessionState, approveBashPattern } from "../session.ts";
 
 function createMockCtx() {
   const confirmQueue: boolean[] = [];
-  const inputQueue: (string | null)[] = [];
+  const editorQueue: (string | null)[] = [];
   const notifications: Array<{ message: string; level: string }> = [];
 
   const ctx = {
     ui: {
       confirm: () => Promise.resolve(confirmQueue.shift() ?? false),
-      input: () => Promise.resolve(inputQueue.shift() ?? null),
+      editor: () => Promise.resolve(editorQueue.shift() ?? null),
       notify: (message: string, level: string) => {
         notifications.push({ message, level });
       },
     },
     _notifications: notifications,
     queueConfirm: (v: boolean) => confirmQueue.push(v),
-    queueInput: (v: string | null) => inputQueue.push(v),
+    queueEditor: (v: string | null) => editorQueue.push(v),
   };
 
   return ctx as typeof ctx & Parameters<typeof checkBashCommand>[3];
@@ -96,7 +96,7 @@ test("no match prompts user, allows, persists, recurses, succeeds", async () => 
     const ctx = createMockCtx();
     ctx.queueConfirm(true);
     ctx.queueConfirm(true);
-    ctx.queueInput("grep *");
+    ctx.queueEditor("grep *");
 
     const result = await checkBashCommand("grep hello file.txt", dir, config, ctx, configPath);
     strictEqual(result, true);
@@ -113,7 +113,7 @@ test("no match prompts user, allows, skips persist, recurses, succeeds", async (
     const ctx = createMockCtx();
     ctx.queueConfirm(true);
     ctx.queueConfirm(false);
-    ctx.queueInput("grep *");
+    ctx.queueEditor("grep *");
 
     const result = await checkBashCommand("grep hello file.txt", dir, config, ctx, configPath);
     strictEqual(result, true);
@@ -155,7 +155,7 @@ test("user allows command but clears pattern", async () => {
     const config = loadConfig(configPath);
     const ctx = createMockCtx();
     ctx.queueConfirm(true);
-    ctx.queueInput("");
+    ctx.queueEditor("");
 
     const result = await checkBashCommand("rm -rf /", dir, config, ctx);
     strictEqual(result, false);
@@ -196,7 +196,7 @@ test("recursion doesn't cause infinite loop", async () => {
     const config = loadConfig(configPath);
     const ctx = createMockCtx();
     ctx.queueConfirm(true);
-    ctx.queueInput("custom-cmd *");
+    ctx.queueEditor("custom-cmd *");
     ctx.queueConfirm(false);
 
     const result = await checkBashCommand("custom-cmd arg", dir, config, ctx);
