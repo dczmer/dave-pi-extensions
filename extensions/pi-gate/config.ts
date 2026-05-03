@@ -1,4 +1,6 @@
-import { dirname, join } from "@std/path";
+import { dirname, join } from "node:path";
+import { readFileSync, mkdirSync, writeFileSync, renameSync } from "node:fs";
+import { homedir } from "node:os";
 
 export interface PiGateConfig {
   bashAllow: string[];
@@ -10,14 +12,14 @@ function isStringArray(v: unknown): v is string[] {
   return Array.isArray(v) && v.every((x) => typeof x === "string");
 }
 
-const home = Deno.env.get("HOME") ?? "/";
+const home = homedir() ?? "/";
 const DEFAULT_CONFIG_PATH = join(home, ".pi", "agent", "extensions", "pi-gate.json");
 
 export function loadConfig(configPath: string = DEFAULT_CONFIG_PATH): PiGateConfig {
 
   let raw: string;
   try {
-    raw = Deno.readTextFileSync(configPath);
+    raw = readFileSync(configPath, "utf-8");
   } catch {
     return { bashAllow: [], externalAllow: [], projectDeny: [] };
   }
@@ -56,7 +58,7 @@ export function loadConfig(configPath: string = DEFAULT_CONFIG_PATH): PiGateConf
 export function saveConfig(config: PiGateConfig, configPath: string = DEFAULT_CONFIG_PATH): void {
   const tempPath = configPath + ".tmp";
 
-  Deno.mkdirSync(dirname(configPath), { recursive: true });
-  Deno.writeTextFileSync(tempPath, JSON.stringify(config, null, 2) + "\n");
-  Deno.renameSync(tempPath, configPath);
+  mkdirSync(dirname(configPath), { recursive: true });
+  writeFileSync(tempPath, JSON.stringify(config, null, 2) + "\n", "utf-8");
+  renameSync(tempPath, configPath);
 }

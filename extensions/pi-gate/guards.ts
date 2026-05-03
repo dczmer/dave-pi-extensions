@@ -2,9 +2,11 @@
  * Expand `~`, resolve relative paths against cwd, and normalize.
  * Removes `.`, handles `..`, and collapses multiple slashes.
  */
+import { homedir } from "node:os";
+
 export function normalizePath(filePath: string, cwd: string): string {
   if (filePath.startsWith("~")) {
-    const home = Deno.env.get("HOME") || "/";
+    const home = homedir() || "/";
     filePath = home + filePath.slice(1);
   }
 

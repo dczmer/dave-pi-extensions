@@ -1,79 +1,80 @@
-import { assertEquals } from "@std/assert";
+import { strictEqual } from "node:assert";
+import { test } from "node:test";
 import { matchesGlob, matchesAnyGlob } from "../matcher.ts";
 
-Deno.test("exact string match", () => {
-  assertEquals(matchesGlob("ls", "ls"), true);
+test("exact string match", () => {
+  strictEqual(matchesGlob("ls", "ls"), true);
 });
 
-Deno.test("single wildcard * matches any chars", () => {
-  assertEquals(matchesGlob("anything", "*"), true);
+test("single wildcard * matches any chars", () => {
+  strictEqual(matchesGlob("anything", "*"), true);
 });
 
-Deno.test("wildcard at end only", () => {
-  assertEquals(matchesGlob("cat foo.txt", "cat *"), true);
+test("wildcard at end only", () => {
+  strictEqual(matchesGlob("cat foo.txt", "cat *"), true);
 });
 
-Deno.test("wildcard in middle", () => {
-  assertEquals(matchesGlob("file123.txt", "file*.txt"), true);
-  assertEquals(matchesGlob("file.txt", "file*.txt"), true);
+test("wildcard in middle", () => {
+  strictEqual(matchesGlob("file123.txt", "file*.txt"), true);
+  strictEqual(matchesGlob("file.txt", "file*.txt"), true);
 });
 
-Deno.test("multiple wildcards", () => {
-  assertEquals(matchesGlob("src/main.txt", "*/*.txt"), true);
-  assertEquals(matchesGlob("a/b/c.txt", "*/*/*.txt"), true);
+test("multiple wildcards", () => {
+  strictEqual(matchesGlob("src/main.txt", "*/*.txt"), true);
+  strictEqual(matchesGlob("a/b/c.txt", "*/*/*.txt"), true);
 });
 
-Deno.test("? single character match", () => {
-  assertEquals(matchesGlob("abc", "a?c"), true);
+test("? single character match", () => {
+  strictEqual(matchesGlob("abc", "a?c"), true);
 });
 
-Deno.test("? rejects zero chars", () => {
-  assertEquals(matchesGlob("ac", "a?c"), false);
+test("? rejects zero chars", () => {
+  strictEqual(matchesGlob("ac", "a?c"), false);
 });
 
-Deno.test("? rejects multiple chars", () => {
-  assertEquals(matchesGlob("abbc", "a?c"), false);
+test("? rejects multiple chars", () => {
+  strictEqual(matchesGlob("abbc", "a?c"), false);
 });
 
-Deno.test("matchesAnyGlob first match", () => {
-  assertEquals(matchesAnyGlob("ls", ["ls", "cat"]), true);
+test("matchesAnyGlob first match", () => {
+  strictEqual(matchesAnyGlob("ls", ["ls", "cat"]), true);
 });
 
-Deno.test("matchesAnyGlob second match", () => {
-  assertEquals(matchesAnyGlob("cat", ["ls", "cat"]), true);
+test("matchesAnyGlob second match", () => {
+  strictEqual(matchesAnyGlob("cat", ["ls", "cat"]), true);
 });
 
-Deno.test("matchesAnyGlob no match", () => {
-  assertEquals(matchesAnyGlob("rm", ["ls", "cat"]), false);
+test("matchesAnyGlob no match", () => {
+  strictEqual(matchesAnyGlob("rm", ["ls", "cat"]), false);
 });
 
-Deno.test("empty pattern returns false", () => {
-  assertEquals(matchesGlob("ls", ""), false);
+test("empty pattern returns false", () => {
+  strictEqual(matchesGlob("ls", ""), false);
 });
 
-Deno.test("empty value matches *", () => {
-  assertEquals(matchesGlob("", "*"), true);
+test("empty value matches *", () => {
+  strictEqual(matchesGlob("", "*"), true);
 });
 
-Deno.test("pattern equals value with literal * char", () => {
-  assertEquals(matchesGlob("ls -la *", "ls -la *"), true);
+test("pattern equals value with literal * char", () => {
+  strictEqual(matchesGlob("ls -la *", "ls -la *"), true);
 });
 
-Deno.test("case sensitivity (Unix-style)", () => {
-  assertEquals(matchesGlob("LS", "ls"), false);
-  assertEquals(matchesGlob("ls", "LS"), false);
+test("case sensitivity (Unix-style)", () => {
+  strictEqual(matchesGlob("LS", "ls"), false);
+  strictEqual(matchesGlob("ls", "LS"), false);
 });
 
-Deno.test("special regex chars treated as literal", () => {
-  assertEquals(matchesGlob("a.b", "a.b"), true);
-  assertEquals(matchesGlob("a+b", "a+b"), true);
-  assertEquals(matchesGlob("a(b)", "a(b)"), true);
+test("special regex chars treated as literal", () => {
+  strictEqual(matchesGlob("a.b", "a.b"), true);
+  strictEqual(matchesGlob("a+b", "a+b"), true);
+  strictEqual(matchesGlob("a(b)", "a(b)"), true);
 });
 
-Deno.test("pattern longer than value returns false", () => {
-  assertEquals(matchesGlob("ls", "ls -l"), false);
+test("pattern longer than value returns false", () => {
+  strictEqual(matchesGlob("ls", "ls -l"), false);
 });
 
-Deno.test("value longer than pattern returns false", () => {
-  assertEquals(matchesGlob("ls -l", "ls"), false);
+test("value longer than pattern returns false", () => {
+  strictEqual(matchesGlob("ls -l", "ls"), false);
 });

@@ -7,15 +7,19 @@ Pi package bundling extensions, themes, prompts for pi coding agent. Developed o
 ## Environment
 
 - **Nix**: Flake-based devShell in `flake.nix`
-- **Deno**: Runtime and test runner
+- **Deno**: Runtime and test runner (for project-level scripts)
+- **Node.js**: Runtime for Pi extensions (Pi loads extensions via Node.js/jiti)
 - **Allowed Dependencies**:
-  - `@std/*` - Deno standard library
+  - `@std/*` - Deno standard library (Deno scripts only)
   - `@mariozechner/*` - Pi SDK packages
+  - `@types/node` - Node.js types (extensions only, dev dependency)
+  - `typescript` - TypeScript compiler (extensions only, dev dependency)
 - **No external deps** ever
 
 ## Testing
 
-- Run tests: `deno test` (no `--allow-all`)
+- Run tests: `deno test` for Deno-based code (no `--allow-all`)
+- Run Node.js extension tests: `cd extensions/<name> && npm test`
 - Use `deno.jsonc` tasks section for full test command
 - **Permission prompts**: If tests fail due to permissions, ask user which flags to add (`--allow-read`, `--allow-env`, etc.)
 - Maintain `test` task in `deno.jsonc` with all of the approved permissions flags.
@@ -65,7 +69,9 @@ extensions/
 └── my-extension/
     ├── index.ts            # Entry point (exports default function)
     ├── helper.ts           # Additional modules
-    └── tests/              # Tests (Deno test runner)
+    ├── package.json        # Node.js dependencies (if needed)
+    ├── tsconfig.json       # TypeScript config (Node.js extensions)
+    └── tests/              # Tests (Node.js test runner for extensions)
         └── *.test.ts
 ```
 
@@ -109,16 +115,25 @@ skills/
 1. Edit code
 2. Add tests
 3. Run verification commands in order:
-   - `deno task test` — unit tests
-   - `deno lint extensions/<name>/` — linter
-   - `deno check extensions/<name>/index.ts` — type checker
+   - For Deno code: `deno task test` — unit tests
+   - For Node.js extensions: `cd extensions/<name> && npm test`
+   - `deno lint extensions/<name>/` — linter (Deno code only)
+   - `deno check extensions/<name>/index.ts` — type checker (Deno code only)
+   - For Node.js extensions: `cd extensions/<name> && npx tsc --noEmit`
 4. Fix issues, repeat all three until clean
 5. Only then consider work complete
 
 ## Constraints Checklist
 
+### Deno Code
 - [ ] Only `@std` and `@mariozechner` imports
 - [ ] No `--allow-all` in tests
 - [ ] Prompt before installing deps
 - [ ] Test task defined in `deno.jsonc`
-- [ ] All three verification commands pass before finishing
+
+### Node.js Extensions (e.g., pi-gate)
+- [ ] Only Node.js built-ins (`node:*`) and `@mariozechner/*` imports at runtime
+- [ ] Dev dependencies (`typescript`, `@types/node`) allowed with manual install
+- [ ] Tests use `node:test` and `node:assert`
+- [ ] `package.json` and `tsconfig.json` present
+- [ ] All verification commands pass before finishing

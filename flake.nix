@@ -18,16 +18,24 @@
         extraPkgs = with pkgs; [
           deno
 
+          nodejs
+
           # TODO: why isn't this available in the agent env?
           rtk
         ];
-        extraCombinators = [
+        extraCombinators = with dave-shield.lib.${system}.jailCombinators; [
+          (readwrite (noescape "~/.cache/deno"))
         ];
+        daveShield = dave-shield.lib.${system}.daveShield;
         makeJailedPi = dave-shield.lib.${system}.makeJailedPi;
       in
       rec {
         packages = {
           jailedPi = makeJailedPi {
+            inherit extraPkgs extraCombinators;
+          };
+          jailedShell = daveShield {
+            exec = pkgs.bash;
             inherit extraPkgs extraCombinators;
           };
         };
