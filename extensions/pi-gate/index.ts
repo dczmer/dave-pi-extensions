@@ -5,7 +5,7 @@ import { checkFileAccess } from "./file-access.ts";
 
 export default function (pi: ExtensionAPI) {
   pi.on("tool_call", async (event, ctx) => {
-    const config = loadConfig(ctx.cwd);
+    const config = loadConfig();
 
     if (event.toolName === "bash") {
       const command = (event.input as { command?: string }).command;

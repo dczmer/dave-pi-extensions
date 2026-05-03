@@ -1,4 +1,5 @@
 import { assertEquals } from "@std/assert";
+import { join } from "@std/path";
 import { loadConfig, type PiGateConfig } from "../config.ts";
 import { checkFileAccess } from "../file-access.ts";
 import { approveExternal, resetSessionState } from "../session.ts";
@@ -35,7 +36,8 @@ async function withTempDir<T>(fn: (dir: string) => Promise<T>): Promise<T> {
 
 Deno.test("project file allowed with empty deny list", async () => {
   await withTempDir(async (dir) => {
-    const config = loadConfig(dir);
+    const configPath = join(dir, "pi-gate.json");
+    const config = loadConfig(configPath);
     const ctx = createMockCtx();
     const result = await checkFileAccess("src/main.ts", dir, config, ctx);
     assertEquals(result, true);
@@ -72,7 +74,8 @@ Deno.test("external file allowed when in session approved list", async () => {
   await withTempDir(async (dir) => {
     resetSessionState();
     approveExternal("/tmp/bar.txt");
-    const config = loadConfig(dir);
+    const configPath = join(dir, "pi-gate.json");
+    const config = loadConfig(configPath);
     const ctx = createMockCtx();
     const result = await checkFileAccess("/tmp/bar.txt", dir, config, ctx);
     assertEquals(result, true);
@@ -81,23 +84,25 @@ Deno.test("external file allowed when in session approved list", async () => {
 
 Deno.test("external file approved by user and persisted to config", async () => {
   await withTempDir(async (dir) => {
-    const config = loadConfig(dir);
+    const configPath = join(dir, "pi-gate.json");
+    const config = loadConfig(configPath);
     const ctx = createMockCtx();
     ctx.queueConfirm(true);
     ctx.queueConfirm(true);
     ctx.queueInput("/tmp/*");
 
-    const result = await checkFileAccess("/tmp/foo.txt", dir, config, ctx);
+    const result = await checkFileAccess("/tmp/foo.txt", dir, config, ctx, configPath);
     assertEquals(result, true);
 
-    const reloaded = loadConfig(dir);
+    const reloaded = loadConfig(configPath);
     assertEquals(reloaded.externalAllow, ["/tmp/*"]);
   });
 });
 
 Deno.test("external file approved by user but not persisted", async () => {
   await withTempDir(async (dir) => {
-    const config = loadConfig(dir);
+    const configPath = join(dir, "pi-gate.json");
+    const config = loadConfig(configPath);
     const ctx = createMockCtx();
     ctx.queueConfirm(true);
     ctx.queueConfirm(false);
@@ -105,7 +110,7 @@ Deno.test("external file approved by user but not persisted", async () => {
     const result = await checkFileAccess("/tmp/foo.txt", dir, config, ctx);
     assertEquals(result, true);
 
-    const reloaded = loadConfig(dir);
+    const reloaded = loadConfig(configPath);
     assertEquals(reloaded.externalAllow, []);
   });
 });
@@ -140,7 +145,8 @@ Deno.test("project file blocked by glob deny pattern", async () => {
 
 Deno.test("external file denied by user at prompt", async () => {
   await withTempDir(async (dir) => {
-    const config = loadConfig(dir);
+    const configPath = join(dir, "pi-gate.json");
+    const config = loadConfig(configPath);
     const ctx = createMockCtx();
     ctx.queueConfirm(false);
 

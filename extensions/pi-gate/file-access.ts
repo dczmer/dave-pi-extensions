@@ -11,6 +11,7 @@ export async function checkFileAccess(
   cwd: string,
   config: PiGateConfig,
   ctx: ExtensionContext,
+  configPath?: string,
 ): Promise<boolean> {
   const normalized = normalizePath(filePath, cwd);
   const normalizedCwd = normalizePath(cwd, cwd);
@@ -45,7 +46,7 @@ export async function checkFileAccess(
       );
       if (pattern) {
         config.externalAllow.push(pattern);
-        saveConfig(cwd, config);
+        saveConfig(config, configPath);
       }
     }
     return true;

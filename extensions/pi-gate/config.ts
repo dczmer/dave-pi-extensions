@@ -10,8 +10,10 @@ function isStringArray(v: unknown): v is string[] {
   return Array.isArray(v) && v.every((x) => typeof x === "string");
 }
 
-export function loadConfig(cwd: string): PiGateConfig {
-  const configPath = join(cwd, "pi-gate.json");
+const home = Deno.env.get("HOME") ?? "/";
+const DEFAULT_CONFIG_PATH = join(home, ".pi", "agent", "extensions", "pi-gate.json");
+
+export function loadConfig(configPath: string = DEFAULT_CONFIG_PATH): PiGateConfig {
 
   let raw: string;
   try {
@@ -51,8 +53,7 @@ export function loadConfig(cwd: string): PiGateConfig {
   };
 }
 
-export function saveConfig(cwd: string, config: PiGateConfig): void {
-  const configPath = join(cwd, "pi-gate.json");
+export function saveConfig(config: PiGateConfig, configPath: string = DEFAULT_CONFIG_PATH): void {
   const tempPath = configPath + ".tmp";
 
   Deno.mkdirSync(dirname(configPath), { recursive: true });

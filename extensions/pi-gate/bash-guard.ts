@@ -12,6 +12,7 @@ export async function checkBashCommand(
   cwd: string,
   config: PiGateConfig,
   ctx: ExtensionContext,
+  configPath?: string,
 ): Promise<boolean> {
   // Step 1: Check command pattern
   const sessionState = getSessionState();
@@ -29,7 +30,7 @@ export async function checkBashCommand(
 
     if (await confirmAddToConfig("bashAllow", ctx)) {
       config.bashAllow.push(pattern);
-      saveConfig(cwd, config);
+      saveConfig(config, configPath);
     }
 
     // Re-check with updated patterns
@@ -39,7 +40,7 @@ export async function checkBashCommand(
   // Step 2: Extract and check file arguments
   const paths = extractPathsFromCommand(command);
   for (const filePath of paths) {
-    const allowed = await checkFileAccess(filePath, cwd, config, ctx);
+    const allowed = await checkFileAccess(filePath, cwd, config, ctx, configPath);
     if (!allowed) {
       ctx.ui.notify(`Blocked: file ${filePath} in command denied`, "warning");
       return false;

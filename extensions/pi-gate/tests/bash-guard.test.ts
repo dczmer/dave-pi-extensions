@@ -51,7 +51,8 @@ Deno.test("command allowed by session approved pattern", async () => {
   await withTempDir(async (dir) => {
     resetSessionState();
     approveBashPattern("cat *");
-    const config = loadConfig(dir);
+    const configPath = join(dir, "pi-gate.json");
+    const config = loadConfig(configPath);
     const ctx = createMockCtx();
     const result = await checkBashCommand("cat file.txt", dir, config, ctx);
     assertEquals(result, true);
@@ -87,32 +88,34 @@ Deno.test("command with external files all allowed", async () => {
 
 Deno.test("no match prompts user, allows, persists, recurses, succeeds", async () => {
   await withTempDir(async (dir) => {
-    const config = loadConfig(dir);
+    const configPath = join(dir, "pi-gate.json");
+    const config = loadConfig(configPath);
     const ctx = createMockCtx();
     ctx.queueConfirm(true);
     ctx.queueConfirm(true);
     ctx.queueInput("grep *");
 
-    const result = await checkBashCommand("grep hello file.txt", dir, config, ctx);
+    const result = await checkBashCommand("grep hello file.txt", dir, config, ctx, configPath);
     assertEquals(result, true);
 
-    const reloaded = loadConfig(dir);
+    const reloaded = loadConfig(configPath);
     assertEquals(reloaded.bashAllow, ["grep *"]);
   });
 });
 
 Deno.test("no match prompts user, allows, skips persist, recurses, succeeds", async () => {
   await withTempDir(async (dir) => {
-    const config = loadConfig(dir);
+    const configPath = join(dir, "pi-gate.json");
+    const config = loadConfig(configPath);
     const ctx = createMockCtx();
     ctx.queueConfirm(true);
     ctx.queueConfirm(false);
     ctx.queueInput("grep *");
 
-    const result = await checkBashCommand("grep hello file.txt", dir, config, ctx);
+    const result = await checkBashCommand("grep hello file.txt", dir, config, ctx, configPath);
     assertEquals(result, true);
 
-    const reloaded = loadConfig(dir);
+    const reloaded = loadConfig(configPath);
     assertEquals(reloaded.bashAllow, []);
   });
 });
@@ -133,7 +136,8 @@ Deno.test("pattern matches but file access denies", async () => {
 
 Deno.test("user denies command at prompt", async () => {
   await withTempDir(async (dir) => {
-    const config = loadConfig(dir);
+    const configPath = join(dir, "pi-gate.json");
+    const config = loadConfig(configPath);
     const ctx = createMockCtx();
     ctx.queueConfirm(false);
 
@@ -144,7 +148,8 @@ Deno.test("user denies command at prompt", async () => {
 
 Deno.test("user allows command but clears pattern", async () => {
   await withTempDir(async (dir) => {
-    const config = loadConfig(dir);
+    const configPath = join(dir, "pi-gate.json");
+    const config = loadConfig(configPath);
     const ctx = createMockCtx();
     ctx.queueConfirm(true);
     ctx.queueInput("");
@@ -184,7 +189,8 @@ Deno.test("command with no file arguments", async () => {
 
 Deno.test("recursion doesn't cause infinite loop", async () => {
   await withTempDir(async (dir) => {
-    const config = loadConfig(dir);
+    const configPath = join(dir, "pi-gate.json");
+    const config = loadConfig(configPath);
     const ctx = createMockCtx();
     ctx.queueConfirm(true);
     ctx.queueInput("custom-cmd *");

@@ -23,7 +23,7 @@ Deno.test("load valid config file with all sections", async () => {
       externalAllow: ["/tmp/*"],
       projectDeny: ["*/secrets.json"],
     }));
-    const config = loadConfig(dir);
+    const config = loadConfig(configPath);
     assertEquals(config.bashAllow, ["ls *"]);
     assertEquals(config.externalAllow, ["/tmp/*"]);
     assertEquals(config.projectDeny, ["*/secrets.json"]);
@@ -32,7 +32,8 @@ Deno.test("load valid config file with all sections", async () => {
 
 Deno.test("load missing config returns empty defaults", async () => {
   await withTempDir((dir) => {
-    const config = loadConfig(dir);
+    const configPath = join(dir, "pi-gate.json");
+    const config = loadConfig(configPath);
     assertEquals(config.bashAllow, []);
     assertEquals(config.externalAllow, []);
     assertEquals(config.projectDeny, []);
@@ -42,13 +43,14 @@ Deno.test("load missing config returns empty defaults", async () => {
 
 Deno.test("save and reload roundtrip preserves data", async () => {
   await withTempDir((dir) => {
+    const configPath = join(dir, "pi-gate.json");
     const original: PiGateConfig = {
       bashAllow: ["cat *"],
       externalAllow: ["/etc/*"],
       projectDeny: ["*.key"],
     };
-    saveConfig(dir, original);
-    const loaded = loadConfig(dir);
+    saveConfig(original, configPath);
+    const loaded = loadConfig(configPath);
     assertEquals(loaded.bashAllow, ["cat *"]);
     assertEquals(loaded.externalAllow, ["/etc/*"]);
     assertEquals(loaded.projectDeny, ["*.key"]);
@@ -58,10 +60,11 @@ Deno.test("save and reload roundtrip preserves data", async () => {
 
 Deno.test("append to bashAllow section", async () => {
   await withTempDir((dir) => {
-    const config = loadConfig(dir);
+    const configPath = join(dir, "pi-gate.json");
+    const config = loadConfig(configPath);
     config.bashAllow.push("git *");
-    saveConfig(dir, config);
-    const loaded = loadConfig(dir);
+    saveConfig(config, configPath);
+    const loaded = loadConfig(configPath);
     assertEquals(loaded.bashAllow, ["git *"]);
     return Promise.resolve();
   });
@@ -69,10 +72,11 @@ Deno.test("append to bashAllow section", async () => {
 
 Deno.test("append to externalAllow section", async () => {
   await withTempDir((dir) => {
-    const config = loadConfig(dir);
+    const configPath = join(dir, "pi-gate.json");
+    const config = loadConfig(configPath);
     config.externalAllow.push("/var/log/*");
-    saveConfig(dir, config);
-    const loaded = loadConfig(dir);
+    saveConfig(config, configPath);
+    const loaded = loadConfig(configPath);
     assertEquals(loaded.externalAllow, ["/var/log/*"]);
     return Promise.resolve();
   });
@@ -82,7 +86,7 @@ Deno.test("malformed JSON throws error with clear message", async () => {
   await withTempDir(async (dir) => {
     const configPath = join(dir, "pi-gate.json");
     await Deno.writeTextFile(configPath, "{ not json");
-    assertThrows(() => loadConfig(dir), SyntaxError);
+    assertThrows(() => loadConfig(configPath), SyntaxError);
   });
 });
 
@@ -94,7 +98,7 @@ Deno.test("missing bashAllow section throws error", async () => {
       projectDeny: [],
     }));
     assertThrows(
-      () => loadConfig(dir),
+      () => loadConfig(configPath),
       Error,
       "bashAllow",
     );
@@ -109,7 +113,7 @@ Deno.test("missing externalAllow section throws error", async () => {
       projectDeny: [],
     }));
     assertThrows(
-      () => loadConfig(dir),
+      () => loadConfig(configPath),
       Error,
       "externalAllow",
     );
@@ -124,7 +128,7 @@ Deno.test("missing projectDeny section throws error", async () => {
       externalAllow: [],
     }));
     assertThrows(
-      () => loadConfig(dir),
+      () => loadConfig(configPath),
       Error,
       "projectDeny",
     );
@@ -140,7 +144,7 @@ Deno.test("bashAllow is not array throws error", async () => {
       projectDeny: [],
     }));
     assertThrows(
-      () => loadConfig(dir),
+      () => loadConfig(configPath),
       Error,
       "bashAllow",
     );
@@ -156,7 +160,7 @@ Deno.test("externalAllow is not array throws error", async () => {
       projectDeny: [],
     }));
     assertThrows(
-      () => loadConfig(dir),
+      () => loadConfig(configPath),
       Error,
       "externalAllow",
     );
@@ -172,7 +176,7 @@ Deno.test("projectDeny is not array throws error", async () => {
       projectDeny: null,
     }));
     assertThrows(
-      () => loadConfig(dir),
+      () => loadConfig(configPath),
       Error,
       "projectDeny",
     );
@@ -184,7 +188,7 @@ Deno.test("empty JSON object throws error", async () => {
     const configPath = join(dir, "pi-gate.json");
     await Deno.writeTextFile(configPath, "{}");
     assertThrows(
-      () => loadConfig(dir),
+      () => loadConfig(configPath),
       Error,
     );
   });
@@ -193,8 +197,9 @@ Deno.test("empty JSON object throws error", async () => {
 Deno.test("save creates parent directories if needed", async () => {
   await withTempDir(async (dir) => {
     const nested = join(dir, "a", "b", "c");
+    const configPath = join(nested, "pi-gate.json");
     const config: PiGateConfig = { bashAllow: [], externalAllow: [], projectDeny: [] };
-    saveConfig(nested, config);
+    saveConfig(config, configPath);
     const stat = await Deno.stat(join(nested, "pi-gate.json"));
     assertEquals(stat.isFile, true);
   });
@@ -202,12 +207,13 @@ Deno.test("save creates parent directories if needed", async () => {
 
 Deno.test("atomic save operation (temp file + rename)", async () => {
   await withTempDir(async (dir) => {
+    const configPath = join(dir, "pi-gate.json");
     const config: PiGateConfig = {
       bashAllow: ["ls"],
       externalAllow: [],
       projectDeny: [],
     };
-    saveConfig(dir, config);
+    saveConfig(config, configPath);
     const entries = [];
     for await (const e of Deno.readDir(dir)) {
       entries.push(e.name);
