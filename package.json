@@ -6,5 +6,8 @@
     "skills": ["./skills"],
     "prompts": ["./prompts"],
     "themes": ["./themes"]
+  },
+  "dependencies": {
+    "@mariozechner/pi": "^0.70.6"
   }
 }
