@@ -39,7 +39,6 @@ function extractCommandSubstitutions(command: string): string[] {
   return results;
 }
 
-// TODO: wow. this is quite hairy. i don't think i'm going to touch it unless it's broken...
 /** Split compound command by &&, ||, ; and return individual statements. */
 function splitCompoundCommand(command: string): string[] {
   const statements: string[] = [];
@@ -48,7 +47,6 @@ function splitCompoundCommand(command: string): string[] {
 
   while (i < command.length) {
     const char = command[i];
-    // TODO: what if `i` is the last character in the string?
     const nextChar = command[i + 1];
 
     // Skip whitespace
