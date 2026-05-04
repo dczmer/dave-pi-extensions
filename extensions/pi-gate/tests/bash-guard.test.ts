@@ -4,7 +4,7 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { loadConfig, type PiGateConfig } from "../config.ts";
-import { checkBashCommand } from "../bash-guard.ts";
+import { checkBashCommand, parseCommandStatements } from "../bash-guard.ts";
 import { resetSessionState, approveBashPattern } from "../session.ts";
 
 function createMockCtx() {
@@ -201,5 +201,89 @@ test("recursion doesn't cause infinite loop", async () => {
 
     const result = await checkBashCommand("custom-cmd arg", dir, config, ctx);
     strictEqual(result, true);
+  });
+});
+
+test("parseCommandStatements: simple command", () => {
+  const result = parseCommandStatements("ls -la");
+  deepStrictEqual(result, ["ls -la"]);
+});
+
+test("parseCommandStatements: cd && npm test", () => {
+  const result = parseCommandStatements("cd /home/dave && npm test");
+  deepStrictEqual(result, ["cd /home/dave", "npm test"]);
+});
+
+test("parseCommandStatements: cd /path && cmd", () => {
+  const result = parseCommandStatements("cd /some/path && ls -la");
+  deepStrictEqual(result, ["cd /some/path", "ls -la"]);
+});
+
+test("parseCommandStatements: semicolon separator", () => {
+  const result = parseCommandStatements("cd /home; ls");
+  deepStrictEqual(result, ["cd /home", "ls"]);
+});
+
+test("parseCommandStatements: multiple semicolons", () => {
+  const result = parseCommandStatements("echo a; echo b; echo c");
+  deepStrictEqual(result, ["echo a", "echo b", "echo c"]);
+});
+
+test("parseCommandStatements: || separator", () => {
+  const result = parseCommandStatements("cat file || echo 'not found'");
+  deepStrictEqual(result, ["cat file", "echo 'not found'"]);
+});
+
+test("parseCommandStatements: mixed separators", () => {
+  const result = parseCommandStatements("cd /tmp && ls || echo fail; echo done");
+  deepStrictEqual(result, ["cd /tmp", "ls", "echo fail", "echo done"]);
+});
+
+test("parseCommandStatements: command substitution $(...)", () => {
+  const result = parseCommandStatements('echo "my name is $(whoami)."');
+  deepStrictEqual(result, ['echo "my name is $(whoami)."', "whoami"]);
+});
+
+test("parseCommandStatements: multiple substitutions", () => {
+  const result = parseCommandStatements("echo $(date) && echo $(pwd)");
+  deepStrictEqual(result, ["echo $(date)", "date", "echo $(pwd)", "pwd"]);
+});
+
+test("parseCommandStatements: nested substitutions", () => {
+  const result = parseCommandStatements("echo $(echo $(whoami))");
+  deepStrictEqual(result, ["echo $(echo $(whoami))", "echo $(whoami)", "whoami"]);
+});
+
+test("parseCommandStatements: handles quoted strings with separators", () => {
+  const result = parseCommandStatements('echo "foo && bar" && ls');
+  deepStrictEqual(result, ['echo "foo && bar"', "ls"]);
+});
+
+test("compound command: all statements allowed", async () => {
+  await withTempDir(async (dir) => {
+    const config: PiGateConfig = {
+      bashAllow: ["cd *", "ls *"],
+      externalAllow: [],
+      projectDeny: [],
+    };
+    const ctx = createMockCtx();
+    // Use project-relative paths to avoid external file prompts
+    const result = await checkBashCommand("cd subdir && ls -la", dir, config, ctx);
+    strictEqual(result, true);
+  });
+});
+
+test("compound command: one statement denied", async () => {
+  await withTempDir(async (dir) => {
+    const config: PiGateConfig = {
+      bashAllow: ["cd *"],
+      externalAllow: [],
+      projectDeny: [],
+    };
+    const ctx = createMockCtx();
+    ctx.queueConfirm(false);
+
+    const result = await checkBashCommand("cd /home && rm -rf /", dir, config, ctx);
+    strictEqual(result, false);
   });
 });

@@ -16,8 +16,6 @@
       let
         pkgs = nixpkgs.legacyPackages.${system};
         extraPkgs = with pkgs; [
-          deno
-
           nodejs
 
           # TODO: why isn't this available in the agent env?
