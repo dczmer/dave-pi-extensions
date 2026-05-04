@@ -66,7 +66,7 @@ export default function (pi: ExtensionAPI) {
               // Build context bar section
               let contextSection = "";
               if (usage && model?.contextWindow) {
-                const used = usage.tokens;
+                const used = usage.tokens ?? 0;
                 const max = model.contextWindow;
                 const percent = Math.round((used / max) * 100);
 
@@ -131,7 +131,7 @@ export default function (pi: ExtensionAPI) {
             // Build context bar section
             let contextSection = "";
             if (usage && model?.contextWindow) {
-              const used = usage.tokens;
+              const used = usage.tokens ?? 0;
               const max = model.contextWindow;
               const percent = Math.round((used / max) * 100);
 
