@@ -14,10 +14,20 @@ Pi package bundling extensions, themes, prompts for pi coding agent. Developed o
   - `typescript` - TypeScript compiler (dev dependency)
 - **No external deps** ever
 
+## Dependencies
+
+Node modules managed at project root only. All extensions use shared dependencies from project `package.json`. No `package.json` in extension directories.
+
+**CRITICAL**: Never install packages automatically.
+- If dependency missing, prompt user to install manually at project root
+- Wait for confirmation before continuing
+
 ## Testing
 
-- Run tests: `npm test` or `cd extensions/<name> && npm test`
-- **Permission prompts**: If tests fail due to permissions, ask user which flags to add
+- Run tests: `npm test`
+- Type check: `npm run typecheck`
+- Lint: `npx eslint extensions/`
+- **Permission prompts**: If tests fail due permissions, ask user which flags to add
 
 ### Test Isolation (CRITICAL)
 
@@ -44,12 +54,6 @@ try {
   delete process.env.MY_EXTENSION_CONFIG_PATH;
 }
 ```
-
-## Dependencies
-
-**CRITICAL**: Never install packages automatically.
-- If dependency missing, prompt user to install manually
-- Wait for confirmation before continuing
 
 ## Project Structure
 
@@ -89,15 +93,15 @@ extensions/
 └── my-extension/
     ├── index.ts            # Entry point (exports default function)
     ├── helper.ts           # Additional modules
-    ├── package.json        # Node.js dependencies (if needed)
-    ├── tsconfig.json       # TypeScript config
+    ├── tsconfig.json       # TypeScript config (uses project node_modules)
     └── tests/              # Tests (Node.js test runner)
         └── *.test.ts
 ```
 
-- Entry point must be `index.ts` inside the extension directory
-- Sub-modules can be imported with relative paths
-- Tests live inside the extension directory under `tests/`
+- Entry point must be `index.ts` inside extension directory
+- Sub-modules imported with relative paths
+- Tests live inside extension directory under `tests/`
+- No `package.json` in extension — uses project root dependencies
 - Do NOT use `.pi/extensions/` — that's for project-local overrides, not package resources
 
 ### Theme Placement
@@ -135,9 +139,9 @@ skills/
 1. Edit code
 2. Add tests
 3. Run verification commands in order:
-   - `npm test` — run project tests
-   - `cd extensions/<name> && npm test` — extension tests
-   - `npx tsc --noEmit` — type check
+   - `npm test` — run all tests
+   - `npm run typecheck` — type check
+   - `npx eslint extensions/` — lint
 4. Fix issues, repeat until clean
 5. Only then consider work complete
 
@@ -146,5 +150,5 @@ skills/
 - [ ] Only Node.js built-ins (`node:*`) and `@mariozechner/*` imports at runtime
 - [ ] Dev dependencies (`typescript`, `@types/node`) allowed with manual install
 - [ ] Tests use `node:test` and `node:assert`
-- [ ] `package.json` and `tsconfig.json` present
+- [ ] Project `package.json` and extension `tsconfig.json` present
 - [ ] All verification commands pass before finishing

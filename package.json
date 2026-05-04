@@ -1,5 +1,6 @@
 {
   "name": "dave-pi-extensions",
+  "type": "module",
   "keywords": [
     "pi-package"
   ],
@@ -20,6 +21,10 @@
   "peerDependencies": {
     "@mariozechner/pi": "^0.70.6",
     "@mariozechner/pi-coding-agent": "0.72.1"
+  },
+  "scripts": {
+    "test": "node --test extensions/**/*.test.ts",
+    "typecheck": "tsc --noEmit"
   },
   "devDependencies": {
     "@types/node": "^25.6.0",
