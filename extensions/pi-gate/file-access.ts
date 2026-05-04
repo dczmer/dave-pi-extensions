@@ -1,18 +1,18 @@
-import type { PiGateConfig } from "./config.ts";
+import type { ConfigResult } from "./config.ts";
 import { saveConfig } from "./config.ts";
 import { normalizePath, classifyPath } from "./guards.ts";
 import { matchesAnyGlob } from "./matcher.ts";
 import { isExternalApproved, approveExternal } from "./session.ts";
-import { promptAllowDeny, confirmAddToConfig, promptPattern } from "./prompts.ts";
+import { promptAllowDeny, confirmAddToConfigWithTarget, promptPattern } from "./prompts.ts";
 import type { ExtensionContext } from "./prompts.ts";
 
 export async function checkFileAccess(
   filePath: string,
   cwd: string,
-  config: PiGateConfig,
+  configResult: ConfigResult,
   ctx: ExtensionContext,
-  configPath?: string,
 ): Promise<boolean> {
+  const config = configResult.merged;
   const normalized = normalizePath(filePath, cwd);
   const normalizedCwd = normalizePath(cwd, cwd);
   const classification = classifyPath(normalized, cwd);
@@ -43,9 +43,19 @@ export async function checkFileAccess(
       "External path pattern",
       ctx,
     );
-    if (pattern && await confirmAddToConfig("externalAllow", ctx, pattern)) {
-      config.externalAllow.push(pattern);
-      saveConfig(config, configPath);
+    if (pattern) {
+      const addResult = await confirmAddToConfigWithTarget("externalAllow", ctx, pattern);
+      if (addResult.confirmed) {
+        if (addResult.target === "project") {
+          configResult.project.externalAllow.push(pattern);
+          saveConfig(configResult.project, configResult.projectPath);
+        } else {
+          configResult.global.externalAllow.push(pattern);
+          saveConfig(configResult.global, configResult.globalPath);
+        }
+        // Update merged config to include the new pattern
+        configResult.merged.externalAllow.push(pattern);
+      }
     }
     return true;
   }

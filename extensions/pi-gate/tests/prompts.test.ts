@@ -4,12 +4,15 @@ import {
   promptAllowDeny,
   promptPattern,
   confirmAddToConfig,
+  confirmAddToConfigWithTarget,
+  type ConfigTarget,
 } from "../prompts.ts";
 
 function createMockCtx(ui: {
   confirm?: (title: string, message: string) => Promise<boolean>;
   input?: (title: string, placeholder?: string) => Promise<string | undefined>;
   editor?: (title: string, prefill?: string) => Promise<string | undefined>;
+  select?: <T extends string>(title: string, options: { label: string; value: T }[], initial?: T) => Promise<T | undefined>;
 }) {
   return { ui } as unknown as Parameters<typeof promptAllowDeny>[1];
 }
@@ -54,9 +57,19 @@ test("promptPattern returns null on cancel", async () => {
   strictEqual(result, null);
 });
 
-test("confirmAddToConfig returns true when user selects Yes", async () => {
+test("confirmAddToConfig returns true when user selects Yes and project", async () => {
   const ctx = createMockCtx({
     confirm: () => Promise.resolve(true),
+    select: () => Promise.resolve("project" as ConfigTarget),
+  });
+  const result = await confirmAddToConfig("bashAllow", ctx);
+  strictEqual(result, true);
+});
+
+test("confirmAddToConfig returns true when user selects Yes and global", async () => {
+  const ctx = createMockCtx({
+    confirm: () => Promise.resolve(true),
+    select: () => Promise.resolve("global" as ConfigTarget),
   });
   const result = await confirmAddToConfig("bashAllow", ctx);
   strictEqual(result, true);
@@ -68,6 +81,45 @@ test("confirmAddToConfig returns false when user selects No", async () => {
   });
   const result = await confirmAddToConfig("bashAllow", ctx);
   strictEqual(result, false);
+});
+
+test("confirmAddToConfigWithTarget returns confirmed true and project target", async () => {
+  const ctx = createMockCtx({
+    confirm: () => Promise.resolve(true),
+    select: () => Promise.resolve("project" as ConfigTarget),
+  });
+  const result = await confirmAddToConfigWithTarget("bashAllow", ctx);
+  strictEqual(result.confirmed, true);
+  strictEqual(result.target, "project");
+});
+
+test("confirmAddToConfigWithTarget returns confirmed true and global target", async () => {
+  const ctx = createMockCtx({
+    confirm: () => Promise.resolve(true),
+    select: () => Promise.resolve("global" as ConfigTarget),
+  });
+  const result = await confirmAddToConfigWithTarget("bashAllow", ctx);
+  strictEqual(result.confirmed, true);
+  strictEqual(result.target, "global");
+});
+
+test("confirmAddToConfigWithTarget returns confirmed false when user denies", async () => {
+  const ctx = createMockCtx({
+    confirm: () => Promise.resolve(false),
+  });
+  const result = await confirmAddToConfigWithTarget("bashAllow", ctx);
+  strictEqual(result.confirmed, false);
+  strictEqual(result.target, "project"); // default fallback
+});
+
+test("confirmAddToConfigWithTarget defaults to project when select returns undefined", async () => {
+  const ctx = createMockCtx({
+    confirm: () => Promise.resolve(true),
+    select: () => Promise.resolve(undefined),
+  });
+  const result = await confirmAddToConfigWithTarget("bashAllow", ctx);
+  strictEqual(result.confirmed, true);
+  strictEqual(result.target, "project");
 });
 
 test("promptPattern trims whitespace from input", async () => {

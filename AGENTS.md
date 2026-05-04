@@ -19,6 +19,32 @@ Pi package bundling extensions, themes, prompts for pi coding agent. Developed o
 - Run tests: `npm test` or `cd extensions/<name> && npm test`
 - **Permission prompts**: If tests fail due to permissions, ask user which flags to add
 
+### Test Isolation (CRITICAL)
+
+**Tests must NEVER modify real user configuration files.**
+
+When testing features that persist to user directories (e.g., `~/.pi/agent/extensions/`):
+- Use environment variables to override config paths to temp directories
+- Use `process.env.MY_EXTENSION_CONFIG_PATH` pattern in code
+- Wrap test operations in `try/finally` to clean up env vars
+- Verify isolation by checking the real config file is untouched after tests
+
+**Example pattern:**
+```typescript
+// In implementation
+const configPath = process.env.MY_EXTENSION_CONFIG_PATH ?? 
+  join(homedir(), ".pi", "agent", "extensions", "my-ext.json");
+
+// In tests
+const tempConfigPath = join(tempDir, "test-config.json");
+process.env.MY_EXTENSION_CONFIG_PATH = tempConfigPath;
+try {
+  // run test
+} finally {
+  delete process.env.MY_EXTENSION_CONFIG_PATH;
+}
+```
+
 ## Dependencies
 
 **CRITICAL**: Never install packages automatically.

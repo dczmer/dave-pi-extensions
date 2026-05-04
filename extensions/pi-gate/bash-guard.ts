@@ -1,10 +1,10 @@
-import type { PiGateConfig } from "./config.ts";
+import type { PiGateConfig, ConfigResult } from "./config.ts";
 import { saveConfig } from "./config.ts";
 import { getSessionState, approveBashPattern } from "./session.ts";
 import { matchesGlob } from "./matcher.ts";
 import { extractPathsFromCommand } from "./guards.ts";
 import { checkFileAccess } from "./file-access.ts";
-import { promptAllowDeny, promptPattern, confirmAddToConfig } from "./prompts.ts";
+import { promptAllowDeny, promptPattern, confirmAddToConfigWithTarget } from "./prompts.ts";
 import type { ExtensionContext } from "./prompts.ts";
 
 /** Extract commands from $(...) substitution. Handles nesting. */
@@ -148,10 +148,10 @@ export function parseCommandStatements(command: string): string[] {
 async function checkSingleCommand(
   command: string,
   cwd: string,
-  config: PiGateConfig,
+  configResult: ConfigResult,
   ctx: ExtensionContext,
-  configPath?: string,
 ): Promise<boolean> {
+  const config = configResult.merged;
   const sessionState = getSessionState();
   const allPatterns = [...config.bashAllow, ...sessionState.approvedBashPatterns];
   const matchedPattern = allPatterns.find((p) => matchesGlob(command, p));
@@ -165,19 +165,27 @@ async function checkSingleCommand(
 
     approveBashPattern(pattern);
 
-    if (await confirmAddToConfig("bashAllow", ctx, pattern)) {
-      config.bashAllow.push(pattern);
-      saveConfig(config, configPath);
+    const addResult = await confirmAddToConfigWithTarget("bashAllow", ctx, pattern);
+    if (addResult.confirmed) {
+      if (addResult.target === "project") {
+        configResult.project.bashAllow.push(pattern);
+        saveConfig(configResult.project, configResult.projectPath);
+      } else {
+        configResult.global.bashAllow.push(pattern);
+        saveConfig(configResult.global, configResult.globalPath);
+      }
+      // Update merged config to include the new pattern
+      configResult.merged.bashAllow.push(pattern);
     }
 
     // Re-check with updated patterns
-    return checkSingleCommand(command, cwd, config, ctx, configPath);
+    return checkSingleCommand(command, cwd, configResult, ctx);
   }
 
   // Check file arguments for this statement
   const paths = extractPathsFromCommand(command);
   for (const filePath of paths) {
-    const allowed = await checkFileAccess(filePath, cwd, config, ctx, configPath);
+    const allowed = await checkFileAccess(filePath, cwd, configResult, ctx);
     if (!allowed) {
       ctx.ui.notify(`Blocked: file ${filePath} in command denied`, "warning");
       return false;
@@ -190,14 +198,13 @@ async function checkSingleCommand(
 export async function checkBashCommand(
   command: string,
   cwd: string,
-  config: PiGateConfig,
+  configResult: ConfigResult,
   ctx: ExtensionContext,
-  configPath?: string,
 ): Promise<boolean> {
   const statements = parseCommandStatements(command);
 
   for (const stmt of statements) {
-    const allowed = await checkSingleCommand(stmt, cwd, config, ctx, configPath);
+    const allowed = await checkSingleCommand(stmt, cwd, configResult, ctx);
     if (!allowed) return false;
   }
 
