@@ -116,18 +116,26 @@ test("no match prompts user, allows, persists to project, recurses, succeeds", a
     const projectConfigDir = join(dir, ".pi", "extensions");
     mkdirSync(projectConfigDir, { recursive: true });
 
-    const configResult = loadConfig(dir);
-    const ctx = createMockCtx();
-    ctx.queueConfirm(true); // Allow command
-    ctx.queueEditor("xyz-custom-cmd *"); // Pattern - unique to avoid matching global config
-    ctx.queueConfirm(true); // Add to config
-    ctx.queueSelect("project"); // Save to project
+    // Use temp file for global config to ensure isolation from real config
+    const tempGlobalPath = join(dir, "global-pi-gate.json");
+    process.env.PI_GATE_GLOBAL_CONFIG_PATH = tempGlobalPath;
 
-    const result = await checkBashCommand("xyz-custom-cmd arg", dir, configResult, ctx);
-    strictEqual(result, true);
+    try {
+      const configResult = loadConfig(dir);
+      const ctx = createMockCtx();
+      ctx.queueConfirm(true); // Allow command
+      ctx.queueEditor("xyz-custom-cmd *"); // Pattern
+      ctx.queueConfirm(true); // Add to config
+      ctx.queueSelect("project"); // Save to project
 
-    const reloaded = loadConfig(dir);
-    deepStrictEqual(reloaded.project.bashAllow, ["xyz-custom-cmd *"]);
+      const result = await checkBashCommand("xyz-custom-cmd arg", dir, configResult, ctx);
+      strictEqual(result, true);
+
+      const reloaded = loadConfig(dir);
+      deepStrictEqual(reloaded.project.bashAllow, ["xyz-custom-cmd *"]);
+    } finally {
+      delete process.env.PI_GATE_GLOBAL_CONFIG_PATH;
+    }
   });
 });
 
@@ -312,6 +320,54 @@ test("parseCommandStatements: nested substitutions", () => {
 test("parseCommandStatements: handles quoted strings with separators", () => {
   const result = parseCommandStatements('echo "foo && bar" && ls');
   deepStrictEqual(result, ['echo "foo && bar"', "ls"]);
+});
+
+test("parseCommandStatements: heredoc with && inside not split", () => {
+  const cmd = `cat <<EOF
+Fix bug && close issue
+Handle edge; case properly
+EOF`;
+  const result = parseCommandStatements(cmd);
+  strictEqual(result.length, 1);
+  strictEqual(result[0].includes("&&"), true);
+  strictEqual(result[0].includes(";"), true);
+});
+
+test("parseCommandStatements: heredoc with <<- strips leading tabs", () => {
+  const cmd = `cat <<-EOF
+\t\tcontent with && and ;
+\tEOF`;
+  const result = parseCommandStatements(cmd);
+  strictEqual(result.length, 1);
+  strictEqual(result[0].includes("&&"), true);
+});
+
+test("parseCommandStatements: quoted heredoc delimiter", () => {
+  const cmd = `cat <<'EOF'
+Fix bug && close issue
+EOF`;
+  const result = parseCommandStatements(cmd);
+  strictEqual(result.length, 1);
+  strictEqual(result[0].includes("&&"), true);
+});
+
+test("parseCommandStatements: heredoc followed by && command", () => {
+  const cmd = `cat <<EOF
+content
+EOF && echo done`;
+  const result = parseCommandStatements(cmd);
+  deepStrictEqual(result, ["cat <<EOF\ncontent\nEOF", "echo done"]);
+});
+
+test("parseCommandStatements: git commit with heredoc message", () => {
+  const cmd = `git commit -F - <<EOF
+Fix bug && close issue
+
+Handle edge; case properly
+EOF`;
+  const result = parseCommandStatements(cmd);
+  strictEqual(result.length, 1);
+  strictEqual(result[0].includes("git commit"), true);
 });
 
 test("compound command: all statements allowed", async () => {

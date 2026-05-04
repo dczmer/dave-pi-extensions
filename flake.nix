@@ -17,12 +17,12 @@
         pkgs = nixpkgs.legacyPackages.${system};
         extraPkgs = with pkgs; [
           nodejs
-
-          # TODO: why isn't this available in the agent env?
+          prettierd
           rtk
         ];
         extraCombinators = with dave-shield.lib.${system}.jailCombinators; [
-          (readwrite (noescape "~/.cache/deno"))
+          # HACK to make npm scripts run
+          (readonly (noescape "/usr/bin/env"))
         ];
         daveShield = dave-shield.lib.${system}.daveShield;
         makeJailedPi = dave-shield.lib.${system}.makeJailedPi;

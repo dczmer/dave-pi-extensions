@@ -36,6 +36,9 @@ function createEmptyConfig(): PiGateConfig {
   };
 }
 
+// TODO: i think the `unknown` can be `string` and we can lose `isStringArray`;
+//  in fact, `obj` is a PiGateConfig so we could use that instead and fix it's `[]` types
+//  and then we can fix the key look up by using `key in PiGateConfig`
 function validateConfig(obj: Record<string, unknown>, configPath: string): PiGateConfig {
   for (const key of ["bashAllow", "externalAllow", "projectDeny"]) {
     if (!(key in obj)) {
@@ -47,6 +50,7 @@ function validateConfig(obj: Record<string, unknown>, configPath: string): PiGat
   }
 
   return {
+    // TODO: :(
     bashAllow: obj.bashAllow as string[],
     externalAllow: obj.externalAllow as string[],
     projectDeny: obj.projectDeny as string[],
@@ -83,6 +87,7 @@ function loadSingleConfig(configPath: string): PiGateConfig {
     throw new Error(`pi-gate: config must be an object in ${configPath}`);
   }
 
+  // TODO: i think this is a PiGateConfig as well...
   const obj = parsed as Record<string, unknown>;
 
   // If any required keys are missing, treat as empty config (for partial/invalid files)

@@ -39,6 +39,7 @@ function extractCommandSubstitutions(command: string): string[] {
   return results;
 }
 
+// TODO: wow. this is quite hairy. i don't think i'm going to touch it unless it's broken...
 /** Split compound command by &&, ||, ; and return individual statements. */
 function splitCompoundCommand(command: string): string[] {
   const statements: string[] = [];
@@ -47,6 +48,7 @@ function splitCompoundCommand(command: string): string[] {
 
   while (i < command.length) {
     const char = command[i];
+    // TODO: what if `i` is the last character in the string?
     const nextChar = command[i + 1];
 
     // Skip whitespace
@@ -97,6 +99,83 @@ function splitCompoundCommand(command: string): string[] {
       }
       current += command.slice(i, j + 1);
       i = j + 1;
+      continue;
+    }
+
+    // Handle heredocs <<DELIMITER or <<-DELIMITER
+    if (char === "<" && nextChar === "<") {
+      let j = i + 2;
+      // Check for <<- (strip leading tabs)
+      let stripTabs = false;
+      if (j < command.length && command[j] === "-") {
+        stripTabs = true;
+        j++;
+      }
+      // Skip whitespace before delimiter
+      while (j < command.length && (command[j] === " " || command[j] === "\t")) {
+        j++;
+      }
+      // Parse delimiter (quoted or unquoted)
+      let delimiter = "";
+      let quoted = false;
+      if (j < command.length && command[j] === "'") {
+        quoted = true;
+        j++;
+        while (j < command.length && command[j] !== "'") {
+          delimiter += command[j];
+          j++;
+        }
+        if (j < command.length) j++; // skip closing quote
+      } else if (j < command.length && command[j] === '"') {
+        quoted = true;
+        j++;
+        while (j < command.length && command[j] !== '"') {
+          if (command[j] === "\\") {
+            delimiter += command[j + 1] || "";
+            j += 2;
+          } else {
+            delimiter += command[j];
+            j++;
+          }
+        }
+        if (j < command.length) j++; // skip closing quote
+      } else {
+        // Unquoted delimiter - read until whitespace or newline
+        while (j < command.length && !/\s/.test(command[j])) {
+          delimiter += command[j];
+          j++;
+        }
+      }
+      // Include the heredoc start in current
+      current += command.slice(i, j);
+      i = j;
+      // Now find the heredoc body and terminator
+      // Continue scanning until we find delimiter at start of line
+      const linesStart = i;
+      while (i < command.length) {
+        // Check if we're at start of line and see the delimiter
+        const atLineStart = i === 0 || command[i - 1] === "\n";
+        if (atLineStart) {
+          let k = i;
+          if (stripTabs) {
+            while (k < command.length && command[k] === "\t") {
+              k++;
+            }
+          }
+          // Check for delimiter match
+          if (command.slice(k, k + delimiter.length) === delimiter) {
+            const afterDelimiter = k + delimiter.length;
+            // Must be followed by whitespace or end of string
+            if (afterDelimiter >= command.length || /\s/.test(command[afterDelimiter])) {
+              // Include everything up to and including delimiter
+              current += command.slice(linesStart, afterDelimiter);
+              i = afterDelimiter;
+              break;
+            }
+          }
+        }
+        i++;
+      }
       continue;
     }
 

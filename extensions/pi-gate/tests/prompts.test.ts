@@ -5,14 +5,13 @@ import {
   promptPattern,
   confirmAddToConfig,
   confirmAddToConfigWithTarget,
-  type ConfigTarget,
 } from "../prompts.ts";
 
 function createMockCtx(ui: {
   confirm?: (title: string, message: string) => Promise<boolean>;
   input?: (title: string, placeholder?: string) => Promise<string | undefined>;
   editor?: (title: string, prefill?: string) => Promise<string | undefined>;
-  select?: <T extends string>(title: string, options: { label: string; value: T }[], initial?: T) => Promise<T | undefined>;
+  select?: (title: string, options: string[]) => Promise<string | undefined>;
 }) {
   return { ui } as unknown as Parameters<typeof promptAllowDeny>[1];
 }
@@ -60,7 +59,7 @@ test("promptPattern returns null on cancel", async () => {
 test("confirmAddToConfig returns true when user selects Yes and project", async () => {
   const ctx = createMockCtx({
     confirm: () => Promise.resolve(true),
-    select: () => Promise.resolve("project" as ConfigTarget),
+    select: () => Promise.resolve("project"),
   });
   const result = await confirmAddToConfig("bashAllow", ctx);
   strictEqual(result, true);
@@ -69,7 +68,7 @@ test("confirmAddToConfig returns true when user selects Yes and project", async 
 test("confirmAddToConfig returns true when user selects Yes and global", async () => {
   const ctx = createMockCtx({
     confirm: () => Promise.resolve(true),
-    select: () => Promise.resolve("global" as ConfigTarget),
+    select: () => Promise.resolve("global"),
   });
   const result = await confirmAddToConfig("bashAllow", ctx);
   strictEqual(result, true);
@@ -86,7 +85,7 @@ test("confirmAddToConfig returns false when user selects No", async () => {
 test("confirmAddToConfigWithTarget returns confirmed true and project target", async () => {
   const ctx = createMockCtx({
     confirm: () => Promise.resolve(true),
-    select: () => Promise.resolve("project" as ConfigTarget),
+    select: () => Promise.resolve("project"),
   });
   const result = await confirmAddToConfigWithTarget("bashAllow", ctx);
   strictEqual(result.confirmed, true);
@@ -96,7 +95,7 @@ test("confirmAddToConfigWithTarget returns confirmed true and project target", a
 test("confirmAddToConfigWithTarget returns confirmed true and global target", async () => {
   const ctx = createMockCtx({
     confirm: () => Promise.resolve(true),
-    select: () => Promise.resolve("global" as ConfigTarget),
+    select: () => Promise.resolve("global"),
   });
   const result = await confirmAddToConfigWithTarget("bashAllow", ctx);
   strictEqual(result.confirmed, true);

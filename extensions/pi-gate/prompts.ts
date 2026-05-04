@@ -11,7 +11,7 @@ export interface ExtensionContext {
     confirm(title: string, message: string): Promise<boolean>;
     input(title: string, placeholder?: string): Promise<string | undefined>;
     editor(title: string, prefill?: string): Promise<string | undefined>;
-    select<T extends string>(title: string, options: { label: string; value: T }[], initial?: T): Promise<T | undefined>;
+    select(title: string, options: string[]): Promise<string | undefined>;
     notify(message: string, type?: "info" | "warning" | "error"): void;
   };
 }
@@ -50,18 +50,14 @@ export async function confirmAddToConfigWithTarget(
   }
 
   // Use select to choose target (project is default)
-  const target = await ctx.ui.select<ConfigTarget>(
-    "pi-gate: Select config location (Tab to switch)",
-    [
-      { label: "Project (.pi/extensions/pi-gate.json)", value: "project" },
-      { label: "Global (~/.pi/agent/extensions/pi-gate.json)", value: "global" },
-    ],
-    "project", // default to project
+  const selectedTarget = await ctx.ui.select(
+    "pi-gate: Select config location",
+    ["project", "global"], // default to project
   );
 
   return {
     confirmed: true,
-    target: target ?? "project", // fallback to project if undefined
+    target: (selectedTarget as ConfigTarget) ?? "project", // fallback to project if undefined
   };
 }
 

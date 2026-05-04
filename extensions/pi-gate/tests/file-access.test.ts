@@ -107,18 +107,26 @@ test("external file approved by user and persisted to project config", async () 
     const projectConfigDir = join(dir, ".pi", "extensions");
     mkdirSync(projectConfigDir, { recursive: true });
 
-    const configResult = loadConfig(dir);
-    const ctx = createMockCtx();
-    ctx.queueConfirm(true); // Allow access
-    ctx.queueEditor("/xyz-custom-path/*"); // Pattern - unique to avoid matching global config
-    ctx.queueConfirm(true); // Add to config
-    ctx.queueSelect("project"); // Save to project
+    // Use temp file for global config to ensure isolation from real config
+    const tempGlobalPath = join(dir, "global-pi-gate.json");
+    process.env.PI_GATE_GLOBAL_CONFIG_PATH = tempGlobalPath;
 
-    const result = await checkFileAccess("/xyz-custom-path/foo.txt", dir, configResult, ctx);
-    strictEqual(result, true);
+    try {
+      const configResult = loadConfig(dir);
+      const ctx = createMockCtx();
+      ctx.queueConfirm(true); // Allow access
+      ctx.queueEditor("/xyz-custom-path/*"); // Pattern
+      ctx.queueConfirm(true); // Add to config
+      ctx.queueSelect("project"); // Save to project
 
-    const reloaded = loadConfig(dir);
-    deepStrictEqual(reloaded.project.externalAllow, ["/xyz-custom-path/*"]);
+      const result = await checkFileAccess("/xyz-custom-path/foo.txt", dir, configResult, ctx);
+      strictEqual(result, true);
+
+      const reloaded = loadConfig(dir);
+      deepStrictEqual(reloaded.project.externalAllow, ["/xyz-custom-path/*"]);
+    } finally {
+      delete process.env.PI_GATE_GLOBAL_CONFIG_PATH;
+    }
   });
 });
 

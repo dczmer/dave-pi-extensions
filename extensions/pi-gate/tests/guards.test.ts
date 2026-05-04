@@ -61,10 +61,34 @@ test("command with no paths returns empty array", () => {
   deepStrictEqual(extractPathsFromCommand("ls -la"), []);
 });
 
-test("quoted paths with spaces naively parsed", () => {
-  deepStrictEqual(extractPathsFromCommand('cat "my file.txt"'), ['"my', 'file.txt"']);
+test("quoted paths are skipped (not treated as file paths)", () => {
+  deepStrictEqual(extractPathsFromCommand('cat "my file.txt"'), []);
 });
 
 test("environment variables not expanded", () => {
   deepStrictEqual(extractPathsFromCommand("echo $HOME"), ["$HOME"]);
+});
+
+test("paths inside single quotes are skipped", () => {
+  deepStrictEqual(extractPathsFromCommand("cat '/etc/passwd'"), []);
+});
+
+test("paths inside double quotes are skipped", () => {
+  deepStrictEqual(extractPathsFromCommand('cat "/tmp/test.txt"'), []);
+});
+
+test("paths inside ANSI-C quotes are skipped", () => {
+  deepStrictEqual(extractPathsFromCommand("cat $'/tmp/file\\n.txt'"), []);
+});
+
+test("paths inside command substitutions are skipped", () => {
+  deepStrictEqual(extractPathsFromCommand("cat $(echo /tmp/test.txt)"), []);
+});
+
+test("unquoted paths are still extracted", () => {
+  deepStrictEqual(extractPathsFromCommand("cat /tmp/test.txt"), ["/tmp/test.txt"]);
+});
+
+test("mixed quoted and unquoted paths", () => {
+  deepStrictEqual(extractPathsFromCommand('cat "/tmp/quoted.txt" /tmp/unquoted.txt'), ["/tmp/unquoted.txt"]);
 });

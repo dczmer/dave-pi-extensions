@@ -1,0 +1,8 @@
+{
+  "bashAllow": [
+    "task*",
+    "which tsc eslint"
+  ],
+  "externalAllow": [],
+  "projectDeny": []
+}
