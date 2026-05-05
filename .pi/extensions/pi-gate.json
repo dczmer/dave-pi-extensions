@@ -1,7 +1,8 @@
 {
   "bashAllow": [
     "task*",
-    "which tsc eslint"
+    "which tsc eslint",
+    "npx eslint*"
   ],
   "externalAllow": [],
   "projectDeny": []

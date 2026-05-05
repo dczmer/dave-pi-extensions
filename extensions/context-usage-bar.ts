@@ -54,10 +54,10 @@ export default function (pi: ExtensionAPI) {
       enabled = !enabled;
       if (enabled) {
         ctx.ui.setFooter((tui, theme, footerData) => {
-          const unsub = footerData.onBranchChange(() => tui.requestRender());
+          footerData.onBranchChange(() => tui.requestRender());
 
           return {
-            dispose: unsub,
+            dispose() {},
             invalidate() {},
             render(width: number): string[] {
               const usage = ctx.getContextUsage();
@@ -77,8 +77,6 @@ export default function (pi: ExtensionAPI) {
                   "muted",
                   `(${formatTokens(used)}/${formatTokens(max)})`
                 )}`;
-              } else {
-                contextSection = theme.fg("muted", "No context data");
               }
 
               // Get other footer data (like original footer)
@@ -119,10 +117,10 @@ export default function (pi: ExtensionAPI) {
     if (cmd) {
       // Manually set up the footer since we can't call our own handler
       ctx.ui.setFooter((tui, theme, footerData) => {
-        const unsub = footerData.onBranchChange(() => tui.requestRender());
+        footerData.onBranchChange(() => tui.requestRender());
 
         return {
-          dispose: unsub,
+          dispose() {},
           invalidate() {},
           render(width: number): string[] {
             const usage = ctx.getContextUsage();
@@ -142,8 +140,6 @@ export default function (pi: ExtensionAPI) {
                 "muted",
                 `(${formatTokens(used)}/${formatTokens(max)})`
               )}`;
-            } else {
-              contextSection = theme.fg("muted", "No context data");
             }
 
             // Right side: model + provider + git branch
@@ -169,7 +165,7 @@ export default function (pi: ExtensionAPI) {
   });
 
   // Update on model changes
-  pi.on("model_select", async (_event, ctx) => {
+  pi.on("model_select", async () => {
     // Footer will re-render automatically, context usage will update
   });
 }

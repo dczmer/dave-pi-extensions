@@ -22,7 +22,7 @@ export default function (pi: ExtensionAPI) {
 		return;
 	}
 
-	pi.on("tool_call", async (event, _ctx) => {
+	pi.on("tool_call", async (event) => {
 		// Only intercept bash tool calls
 		if (isToolCallEventType("bash", event)) {
 			const originalCommand = event.input.command;

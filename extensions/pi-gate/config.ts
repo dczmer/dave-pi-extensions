@@ -63,9 +63,10 @@ function loadSingleConfig(configPath: string): PiGateConfig {
   let parsed: unknown;
   try {
     parsed = JSON.parse(raw);
-  } catch (e) {
+  } catch (err) {
     throw new SyntaxError(
-      `pi-gate: malformed JSON in ${configPath}: ${e instanceof Error ? e.message : String(e)}`,
+      `pi-gate: malformed JSON in ${configPath}: ${err instanceof Error ? err.message : String(err)}`,
+      { cause: err },
     );
   }
 

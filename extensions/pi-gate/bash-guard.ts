@@ -1,4 +1,4 @@
-import type { PiGateConfig, ConfigResult } from "./config.ts";
+import type { ConfigResult } from "./config.ts";
 import { saveConfig } from "./config.ts";
 import { getSessionState, approveBashPattern } from "./session.ts";
 import { matchesGlob } from "./matcher.ts";
@@ -115,9 +115,7 @@ function splitCompoundCommand(command: string): string[] {
       }
       // Parse delimiter (quoted or unquoted)
       let delimiter = "";
-      let quoted = false;
       if (j < command.length && command[j] === "'") {
-        quoted = true;
         j++;
         while (j < command.length && command[j] !== "'") {
           delimiter += command[j];
@@ -125,7 +123,6 @@ function splitCompoundCommand(command: string): string[] {
         }
         if (j < command.length) j++; // skip closing quote
       } else if (j < command.length && command[j] === '"') {
-        quoted = true;
         j++;
         while (j < command.length && command[j] !== '"') {
           if (command[j] === "\\") {
@@ -231,9 +228,9 @@ async function checkSingleCommand(
   const config = configResult.merged;
   const sessionState = getSessionState();
   const allPatterns = [...config.bashAllow, ...sessionState.approvedBashPatterns];
-  const matchedPattern = allPatterns.find((p) => matchesGlob(command, p));
+  const hasMatch = allPatterns.some((p) => matchesGlob(command, p));
 
-  if (!matchedPattern) {
+  if (!hasMatch) {
     const allowed = await promptAllowDeny(`Allow bash command: ${command}?`, ctx);
     if (!allowed) return false;
 
