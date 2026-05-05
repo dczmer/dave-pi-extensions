@@ -125,8 +125,7 @@ test("no match prompts user, allows, persists to project, recurses, succeeds", a
       const ctx = createMockCtx();
       ctx.queueConfirm(true); // Allow command
       ctx.queueEditor("xyz-custom-cmd *"); // Pattern
-      ctx.queueConfirm(true); // Add to config
-      ctx.queueSelect("project"); // Save to project
+      ctx.queueSelect("Project"); // Save to project
 
       const result = await checkBashCommand("xyz-custom-cmd arg", dir, configResult, ctx);
       strictEqual(result, true);
@@ -153,8 +152,7 @@ test("no match prompts user, allows, persists to global, recurses, succeeds", as
       const ctx = createMockCtx();
       ctx.queueConfirm(true); // Allow command
       ctx.queueEditor("abc-global-test-cmd *"); // Pattern - unique
-      ctx.queueConfirm(true); // Add to config
-      ctx.queueSelect("global"); // Save to global
+      ctx.queueSelect("Global"); // Save to global
 
       const result = await checkBashCommand("abc-global-test-cmd arg", dir, configResult, ctx);
       strictEqual(result, true);
@@ -179,7 +177,7 @@ test("no match prompts user, allows, skips persist, recurses, succeeds", async (
     const ctx = createMockCtx();
     ctx.queueConfirm(true); // Allow command
     ctx.queueEditor("def-skip-test-cmd *"); // Pattern - unique
-    ctx.queueConfirm(false); // Don't add to config
+    ctx.queueSelect("No"); // Don't add to config
 
     const result = await checkBashCommand("def-skip-test-cmd arg", dir, configResult, ctx);
     strictEqual(result, true);
@@ -260,7 +258,7 @@ test("recursion doesn't cause infinite loop", async () => {
     const ctx = createMockCtx();
     ctx.queueConfirm(true);
     ctx.queueEditor("custom-cmd *");
-    ctx.queueConfirm(false);
+    ctx.queueSelect("No");
 
     const result = await checkBashCommand("custom-cmd arg", dir, configResult, ctx);
     strictEqual(result, true);

@@ -116,8 +116,7 @@ test("external file approved by user and persisted to project config", async () 
       const ctx = createMockCtx();
       ctx.queueConfirm(true); // Allow access
       ctx.queueEditor("/xyz-custom-path/*"); // Pattern
-      ctx.queueConfirm(true); // Add to config
-      ctx.queueSelect("project"); // Save to project
+      ctx.queueSelect("Project"); // Save to project
 
       const result = await checkFileAccess("/xyz-custom-path/foo.txt", dir, configResult, ctx);
       strictEqual(result, true);
@@ -144,8 +143,7 @@ test("external file approved by user and persisted to global config", async () =
       const ctx = createMockCtx();
       ctx.queueConfirm(true); // Allow access
       ctx.queueEditor("/abc-global-test/*"); // Pattern - unique
-      ctx.queueConfirm(true); // Add to config
-      ctx.queueSelect("global"); // Save to global
+      ctx.queueSelect("Global"); // Save to global
 
       const result = await checkFileAccess("/abc-global-test/foo.txt", dir, configResult, ctx);
       strictEqual(result, true);
@@ -170,7 +168,7 @@ test("external file approved by user but not persisted", async () => {
     const ctx = createMockCtx();
     ctx.queueConfirm(true); // Allow access
     ctx.queueEditor("/def-skip-test/*"); // Pattern
-    ctx.queueConfirm(false); // Don't add to config
+    ctx.queueSelect("No"); // Don't add to config
 
     const result = await checkFileAccess("/def-skip-test/foo.txt", dir, configResult, ctx);
     strictEqual(result, true);

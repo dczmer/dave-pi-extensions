@@ -2,7 +2,8 @@
   "bashAllow": [
     "task*",
     "which tsc eslint",
-    "npx eslint*"
+    "npx eslint*",
+    "npm run*"
   ],
   "externalAllow": [],
   "projectDeny": []

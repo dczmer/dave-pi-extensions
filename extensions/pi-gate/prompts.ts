@@ -40,25 +40,18 @@ export async function confirmAddToConfigWithTarget(
   value?: string,
 ): Promise<AddToConfigResult> {
   const valueInfo = value ? `\n\nValue: "${value}"` : "";
-  const confirmed = await ctx.ui.confirm(
-    "pi-gate",
-    `Add to pi-gate.json -> "${section}"?${valueInfo}`,
+  const choice = await ctx.ui.select(
+    `pi-gate: Save to pi-gate.json -> "${section}"?${valueInfo}`,
+    ["No", "Project", "Global"],
   );
 
-  if (!confirmed) {
-    return { confirmed: false, target: "project" };
+  if (choice === "Project") {
+    return { confirmed: true, target: "project" };
+  } else if (choice === "Global") {
+    return { confirmed: true, target: "global" };
   }
 
-  // Use select to choose target (project is default)
-  const selectedTarget = await ctx.ui.select(
-    "pi-gate: Select config location",
-    ["project", "global"], // default to project
-  );
-
-  return {
-    confirmed: true,
-    target: (selectedTarget as ConfigTarget) ?? "project", // fallback to project if undefined
-  };
+  return { confirmed: false, target: "project" };
 }
 
 // Backward compatibility - deprecated, use confirmAddToConfigWithTarget
