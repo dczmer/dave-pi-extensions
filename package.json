@@ -23,7 +23,7 @@
     "@mariozechner/pi-coding-agent": "0.72.1"
   },
   "scripts": {
-    "test": "node --test extensions/**/*.test.ts",
+    "test": "node --test test/**/*.test.ts",
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {

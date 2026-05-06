@@ -1,6 +1,6 @@
 import { strictEqual, deepStrictEqual } from "node:assert";
 import { test } from "node:test";
-import { classifyPath, normalizePath, extractPathsFromCommand } from "../guards.ts";
+import { classifyPath, normalizePath, extractPathsFromCommand } from "../../../extensions/pi-gate/guards.ts";
 
 test("project file classification", () => {
   strictEqual(classifyPath("/project/src/main.ts", "/project"), "project");

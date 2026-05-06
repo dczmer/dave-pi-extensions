@@ -24,7 +24,7 @@ Node modules managed at project root only. All extensions use shared dependencie
 
 ## Testing
 
-- Run tests: `npm test`
+- Run tests: `npm test` (tests live under `test/extensions/EXTENSION_NAME/`)
 - Type check: `npm run typecheck`
 - Lint: `npx eslint extensions/`
 - **Permission prompts**: If tests fail due permissions, ask user which flags to add
@@ -69,6 +69,7 @@ try {
 ```
 .
 ├── extensions/     # Pi extensions (TS) — see placement rules below
+├── test/           # Tests — mirror structure: test/extensions/EXTENSION_NAME/
 ├── themes/         # JSON theme files (*.json)
 ├── prompts/        # Prompt templates (*.md)
 ├── skills/         # Pi skills — one subdirectory per skill
@@ -93,16 +94,28 @@ extensions/
 └── my-extension/
     ├── index.ts            # Entry point (exports default function)
     ├── helper.ts           # Additional modules
-    ├── tsconfig.json       # TypeScript config (uses project node_modules)
-    └── tests/              # Tests (Node.js test runner)
-        └── *.test.ts
+    └── tsconfig.json       # TypeScript config (uses project node_modules)
 ```
 
 - Entry point must be `index.ts` inside extension directory
 - Sub-modules imported with relative paths
-- Tests live inside extension directory under `tests/`
 - No `package.json` in extension — uses project root dependencies
 - Do NOT use `.pi/extensions/` — that's for project-local overrides, not package resources
+
+### Test Placement
+
+Tests live outside `extensions/` so pi never mistakes them for extensions:
+
+```
+test/
+└── extensions/
+    └── my-extension/       # Tests for extensions/my-extension/
+        └── *.test.ts
+```
+
+- Mirror extension path: `test/extensions/my-extension/`
+- Import source with `../../../extensions/my-extension/foo.ts`
+- Run with `node --test test/**/*.test.ts`
 
 ### Theme Placement
 

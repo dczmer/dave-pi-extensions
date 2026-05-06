@@ -1,6 +1,6 @@
 import { strictEqual } from "node:assert";
 import { test } from "node:test";
-import { matchesGlob, matchesAnyGlob } from "../matcher.ts";
+import { matchesGlob, matchesAnyGlob } from "../../../extensions/pi-gate/matcher.ts";
 
 test("exact string match", () => {
   strictEqual(matchesGlob("ls", "ls"), true);

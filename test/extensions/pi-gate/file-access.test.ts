@@ -3,9 +3,9 @@ import { test } from "node:test";
 import { mkdtempSync, rmSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { loadConfig, type ConfigResult } from "../config.ts";
-import { checkFileAccess } from "../file-access.ts";
-import { approveExternal, resetSessionState } from "../session.ts";
+import { loadConfig, type ConfigResult } from "../../../extensions/pi-gate/config.ts";
+import { checkFileAccess } from "../../../extensions/pi-gate/file-access.ts";
+import { approveExternal, resetSessionState } from "../../../extensions/pi-gate/session.ts";
 
 function createMockCtx() {
   const confirmQueue: boolean[] = [];

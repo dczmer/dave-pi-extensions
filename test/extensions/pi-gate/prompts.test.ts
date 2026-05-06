@@ -5,7 +5,7 @@ import {
   promptPattern,
   confirmAddToConfig,
   confirmAddToConfigWithTarget,
-} from "../prompts.ts";
+} from "../../../extensions/pi-gate/prompts.ts";
 
 function createMockCtx(ui: {
   confirm?: (title: string, message: string) => Promise<boolean>;

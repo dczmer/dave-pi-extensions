@@ -7,7 +7,7 @@ import {
   isExternalApproved,
   isBashPatternApproved,
   resetSessionState,
-} from "../session.ts";
+} from "../../../extensions/pi-gate/session.ts";
 
 test("approve and check external path", () => {
   resetSessionState();

@@ -7,7 +7,7 @@ import {
   type PiGateConfig,
   loadConfig,
   saveConfig,
-} from "../config.ts";
+} from "../../../extensions/pi-gate/config.ts";
 
 function withTempDir<T>(fn: (dir: string) => T): T {
   const dir = mkdtempSync(join(tmpdir(), "pi-gate-"));

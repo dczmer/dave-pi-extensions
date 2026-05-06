@@ -3,9 +3,9 @@ import { test } from "node:test";
 import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { loadConfig, type ConfigResult } from "../config.ts";
-import { checkBashCommand, parseCommandStatements } from "../bash-guard.ts";
-import { resetSessionState, approveBashPattern } from "../session.ts";
+import { loadConfig, type ConfigResult } from "../../../extensions/pi-gate/config.ts";
+import { checkBashCommand, parseCommandStatements } from "../../../extensions/pi-gate/bash-guard.ts";
+import { resetSessionState, approveBashPattern } from "../../../extensions/pi-gate/session.ts";
 
 function createMockCtx() {
   const confirmQueue: boolean[] = [];
