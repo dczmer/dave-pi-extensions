@@ -86,18 +86,13 @@ export default function (pi: ExtensionAPI): void {
     }
   });
 
-  // Inject planning prompt
+  // Inject planning prompt into system prompt (ephemeral, per-turn).
+  // No persistent message — avoids stale [PLANNING MODE ACTIVE] in
+  // session history after plan mode is toggled off.
   pi.on("before_agent_start", async (event) => {
     if (!planModeEnabled) return;
-
-    const chained = event.systemPrompt ?? "";
     return {
-      systemPrompt: `${chained}\n\n${PLAN_PROMPT}`,
-      message: {
-        customType: "plan-mode-context",
-        content: PLAN_PROMPT,
-        display: false,
-      },
+      systemPrompt: `${event.systemPrompt ?? ""}\n\n${PLAN_PROMPT}`,
     };
   });
 
