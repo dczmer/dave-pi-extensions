@@ -10,32 +10,8 @@
  * Returns null if command appears safe, or a blocking reason string.
  */
 
-import { createRequire } from "node:module";
-
-// bash-parser is a CJS module with no type declarations.
-// Use createRequire to load it without TypeScript errors.
-const require = createRequire(import.meta.url);
-const parse: (code: string, opts?: { mode?: string }) => unknown =
-  require("bash-parser");
-
-// ── AST types (partial, what we need) ──────────────────────────
-
-interface WordNode {
-  type: "Word";
-  text: string;
-}
-
-interface RedirectNode {
-  type: "Redirect";
-  op: { type: string; text: string };
-  file: WordNode;
-}
-
-interface CommandNode {
-  type: "Command";
-  name?: { text: string };
-  suffix?: Array<WordNode | RedirectNode>;
-}
+import { parseBashCommand, walkCommands } from "../../src/bash-parser.ts";
+import type { AstCommand, AstWord, AstRedirect } from "../../src/bash-parser.ts";
 
 // ── Destructive commands (always block) ───────────────────────
 
@@ -116,54 +92,31 @@ const WRITE_REDIRECTS = new Set([
 
 /** Returns null if command is safe, or a blocking reason string. */
 export function isDestructiveCommand(command: string): string | null {
-  let ast: unknown;
+  let ast;
   try {
-    ast = parse(command, { mode: "posix" });
+    ast = parseBashCommand(command);
   } catch {
     return "Blocked: failed to parse command in plan mode";
   }
 
-  return walk(ast);
-}
+  let reason: string | null = null;
 
-// ── AST walker ─────────────────────────────────────────────────
+  walkCommands(ast, (cmd) => {
+    if (reason) return; // short-circuit after first block
+    reason = checkCommand(cmd);
+  });
 
-function walk(node: unknown): string | null {
-  if (node === null || node === undefined) return null;
-  if (typeof node !== "object") return null;
-
-  const obj = node as Record<string, unknown>;
-
-  // Check Command nodes
-  if (obj.type === "Command") {
-    const result = checkCommand(obj as unknown as CommandNode);
-    if (result) return result;
-  }
-
-  // Recurse into arrays and objects
-  for (const value of Object.values(obj)) {
-    if (Array.isArray(value)) {
-      for (const item of value) {
-        const result = walk(item);
-        if (result) return result;
-      }
-    } else if (typeof value === "object" && value !== null) {
-      const result = walk(value);
-      if (result) return result;
-    }
-  }
-
-  return null;
+  return reason;
 }
 
 // ── Command checker ────────────────────────────────────────────
 
-function checkCommand(node: CommandNode): string | null {
+function checkCommand(node: AstCommand): string | null {
   // Check write redirects (allow /dev/null)
   if (node.suffix) {
     for (const item of node.suffix) {
       if (item.type === "Redirect") {
-        const r = item as RedirectNode;
+        const r = item as AstRedirect;
         if (WRITE_REDIRECTS.has(r.op.type)) {
           if (isSafeRedirectTarget(r.file)) continue;
           return `Blocked: write redirect '${r.op.text} ${r.file.text}' may modify files`;
@@ -225,7 +178,7 @@ function checkCommand(node: CommandNode): string | null {
     if (node.suffix) {
       for (const item of node.suffix) {
         if (item.type === "Word") {
-          const w = item as WordNode;
+          const w = item as AstWord;
           if (w.text === "-o" || w.text === "-O" || w.text === "--output") {
             return "Blocked: curl output flag may write files";
           }
@@ -240,31 +193,29 @@ function checkCommand(node: CommandNode): string | null {
 // ── Argument helpers ───────────────────────────────────────────
 
 /** Return true if redirect target is safe (/dev/null or numeric fd). */
-function isSafeRedirectTarget(file: WordNode): boolean {
+function isSafeRedirectTarget(file: AstWord): boolean {
   if (file.text === "/dev/null") return true;
-  // Numeric file descriptors (e.g. 2>&1, 1>&2) and dash (close fd)
   if (/^[0-9]+$/.test(file.text) || file.text === "-") return true;
   return false;
 }
 
 /** Extract the first non-redirect argument (index 0 after command name). */
-function getFirstArg(node: CommandNode): string | undefined {
+function getFirstArg(node: AstCommand): string | undefined {
   if (!node.suffix) return undefined;
   for (const item of node.suffix) {
-    if (item.type === "Word") return (item as WordNode).text;
-    // Skip redirects when looking for subcommand
+    if (item.type === "Word") return (item as AstWord).text;
   }
   return undefined;
 }
 
 /** Extract the n-th Word argument (1-indexed, skipping redirects). */
-function getNthArg(node: CommandNode, n: number): string | undefined {
+function getNthArg(node: AstCommand, n: number): string | undefined {
   if (!node.suffix) return undefined;
   let count = 0;
   for (const item of node.suffix) {
     if (item.type === "Word") {
       count++;
-      if (count === n) return (item as WordNode).text;
+      if (count === n) return (item as AstWord).text;
     }
   }
   return undefined;
