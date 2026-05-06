@@ -1,4 +1,15 @@
-import { parseBashCommand, collectStatements } from "../../src/bash-parser.ts";
+import { parseBashCommand, collectStatements, extractPathsFromAST, commandText } from "../../src/bash-parser.ts";
+import type {
+  AstNode,
+  AstScript,
+  AstCommand,
+  AstWord,
+  AstCommandExpansion,
+  AstLogicalExpression,
+  AstPipeline,
+  AstFor,
+  AstIf,
+} from "../../src/bash-parser.ts";
 import type { ConfigResult } from "./config.ts";
 import { saveConfig } from "./config.ts";
 import { getSessionState, approveBashPattern } from "./session.ts";
@@ -14,8 +25,6 @@ import type { ExtensionContext } from "./prompts.ts";
 
 /** Parse command into individual statements. Returns null on parse failure. */
 export function parseCommandStatements(command: string): string[] | null {
-  // Heredocs cause bash-parser to misparse (posix mode) or produce
-  // garbage ASTs (bash mode).  Bail out.
   if (command.includes("<<")) return null;
   try {
     const ast = parseBashCommand(command);
@@ -23,6 +32,95 @@ export function parseCommandStatements(command: string): string[] | null {
   } catch {
     return null;
   }
+}
+
+/** A statement with its AST node for richer inspection (path extraction). */
+interface StatementEntry {
+  text: string;
+  cmd: AstCommand | null; // null for raw subshell text
+}
+
+/** Like parseCommandStatements but retains AST nodes for each statement. */
+function parseStatementEntries(command: string): StatementEntry[] | null {
+  if (command.includes("<<")) return null;
+
+  let ast: AstScript;
+  try {
+    ast = parseBashCommand(command);
+  } catch {
+    return null;
+  }
+
+  const entries: StatementEntry[] = [];
+  const seenSubs = new Set<string>();
+
+  function walk(node: AstNode): void {
+    if (node.type === "Script" || node.type === "CompoundList") {
+      for (const c of (node as AstScript).commands) walk(c);
+      return;
+    }
+
+    if (node.type === "Command") {
+      const cmd = node as AstCommand;
+      const text = commandText(command, cmd);
+      if (text) entries.push({ text, cmd });
+
+      // Emit raw subshell texts
+      if (cmd.suffix) {
+        for (const s of cmd.suffix) {
+          if (s.type !== "Word") continue;
+          const w = s as AstWord;
+          if (!w.expansion) continue;
+          for (const exp of w.expansion) {
+            if (exp.type !== "CommandExpansion") continue;
+            const ce = exp as AstCommandExpansion;
+            if (!seenSubs.has(ce.command)) {
+              seenSubs.add(ce.command);
+              entries.push({ text: ce.command, cmd: null });
+            }
+          }
+        }
+      }
+      return;
+    }
+
+    if (node.type === "LogicalExpression") {
+      const le = node as AstLogicalExpression;
+      walk(le.left);
+      walk(le.right);
+      return;
+    }
+
+    if (node.type === "Pipeline") {
+      for (const c of (node as AstPipeline).commands) walk(c);
+      return;
+    }
+
+    if (node.type === "For" || node.type === "While" || node.type === "Until") {
+      walk((node as AstFor).do);
+      return;
+    }
+
+    if (node.type === "If") {
+      const ifn = node as AstIf;
+      walk(ifn.then);
+      if (ifn.else) walk(ifn.else);
+      return;
+    }
+
+    if (node.type === "Subshell") {
+      walk((node as unknown as { list: AstNode }).list);
+      return;
+    }
+
+    if (node.type === "Function") {
+      walk((node as unknown as { body: AstNode }).body);
+      return;
+    }
+  }
+
+  walk(ast);
+  return entries;
 }
 
 // ---------------------------------------------------------------------------
@@ -34,6 +132,7 @@ async function checkSingleCommand(
   cwd: string,
   configResult: ConfigResult,
   ctx: ExtensionContext,
+  cmdNode?: AstCommand,
 ): Promise<boolean> {
   const config = configResult.merged;
   const sessionState = getSessionState();
@@ -61,11 +160,14 @@ async function checkSingleCommand(
       configResult.merged.bashAllow.push(pattern);
     }
 
-    return checkSingleCommand(command, cwd, configResult, ctx);
+    return checkSingleCommand(command, cwd, configResult, ctx, cmdNode);
   }
 
-  // Check file arguments for this statement
-  const paths = extractPathsFromCommand(command);
+  // Extract file paths: prefer AST when available, fall back to string tokenizer
+  const paths = cmdNode
+    ? extractPathsFromAST(cmdNode)
+    : extractPathsFromCommand(command);
+
   for (const filePath of paths) {
     const allowed = await checkFileAccess(filePath, cwd, configResult, ctx);
     if (!allowed) {
@@ -83,14 +185,20 @@ export async function checkBashCommand(
   configResult: ConfigResult,
   ctx: ExtensionContext,
 ): Promise<boolean> {
-  const statements = parseCommandStatements(command);
-  if (statements === null) {
+  const entries = parseStatementEntries(command);
+  if (entries === null) {
     ctx.ui.notify("Blocked: failed to parse command", "warning");
     return false;
   }
 
-  for (const stmt of statements) {
-    const allowed = await checkSingleCommand(stmt, cwd, configResult, ctx);
+  for (const entry of entries) {
+    const allowed = await checkSingleCommand(
+      entry.text,
+      cwd,
+      configResult,
+      ctx,
+      entry.cmd ?? undefined,
+    );
     if (!allowed) return false;
   }
 

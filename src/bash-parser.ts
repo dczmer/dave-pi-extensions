@@ -306,3 +306,38 @@ export function collectStatements(source: string, ast: AstScript): string[] {
   collect(ast);
   return statements;
 }
+
+// ---------------------------------------------------------------------------
+// Path extraction from AST
+// ---------------------------------------------------------------------------
+
+/**
+ * Extract potential file-path arguments from a Command node's suffix.
+ * Skips options (-flag), redirects, operators, and variable references.
+ * Replaces manual re-tokenization of command strings.
+ */
+export function extractPathsFromAST(cmd: AstCommand): string[] {
+  const paths: string[] = [];
+  if (!cmd.suffix) return paths;
+
+  for (const item of cmd.suffix) {
+    // Redirects have their own file field, not a command argument
+    if (item.type === "Redirect") continue;
+    if (item.type !== "Word") continue;
+
+    const w = item as AstWord;
+    const t = w.text;
+
+    // Options/flags
+    if (t.startsWith("-")) continue;
+    // Variable references ($VAR, ${VAR})
+    if (t.startsWith("$")) continue;
+    // Tilde expansion (~/path) — the text from bash-parser is already expanded
+    // to /home/user/path? Actually no, bash-parser leaves it as "~/path".
+    // Let normalizePath handle it.
+
+    paths.push(t);
+  }
+
+  return paths;
+}
