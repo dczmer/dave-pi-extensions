@@ -1,9 +1,9 @@
 /**
  * Plan Mode Extension
  *
- * Toggle read-only planning mode. Blocks edit/write tools and
- * destructive bash commands. Injects planning instructions into
- * system prompt. Use /plan or --plan flag.
+ * Toggle read-only planning mode. Blocks edit/write tools.
+ * Injects planning instructions into system prompt.
+ * Use /plan or --plan flag.
  */
 
 import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
@@ -15,50 +15,10 @@ const BLOCK_REASON =
 
 const PLAN_PROMPT = `[PLANNING MODE ACTIVE]
 You are in planning mode. Read and analyze only.
-1. Present a plan of requested work before any action. Never make changes.
-2. Do not use bash to modify files, install packages, or change system state.
+1. Present a plan before any action. Never make changes.
+2. Do NOT run commands that modify, install, or delete anything.
 Tools edit/write are disabled. Use read, grep, find, ls for exploration.
-When ready to implement, ask user to exit plan mode with /plan.`;
-
-const DESTRUCTIVE_PATTERNS: RegExp[] = [
-  /\brm\b/,
-  /\brmdir\b/,
-  /\bmv\b/,
-  /\bcp\b/,
-  /\bmkdir\b/,
-  /\btouch\b/,
-  /\bchmod\b/,
-  /\bchown\b/,
-  /\bchgrp\b/,
-  /\bln\b/,
-  /\btee\b/,
-  /\btruncate\b/,
-  /\bdd\b/,
-  /\bshred\b/,
-  /(?:^|[^<])>(?!>)/,
-  />>/,
-  /\bnpm\s+(install|uninstall|update|ci|link|publish)/i,
-  /\byarn\s+(add|remove|install|publish)/i,
-  /\bpnpm\s+(add|remove|install|publish)/i,
-  /\bpip\s+(install|uninstall)/i,
-  /\bapt(?:-get)?\s+(install|remove|purge|update|upgrade)/i,
-  /\bbrew\s+(install|uninstall|upgrade)/i,
-  /\bgit\s+(add|commit|push|pull|merge|rebase|reset|checkout|branch\s+-[dD]|stash|cherry-pick|revert|tag|init|clone)/i,
-  /\bsudo\b/,
-  /\bsu\b/,
-  /\bkill\b/,
-  /\bpkill\b/,
-  /\bkillall\b/,
-  /\breboot\b/,
-  /\bshutdown\b/,
-  /\bsystemctl\s+(start|stop|restart|enable|disable)/i,
-  /\bservice\s+\S+\s+(start|stop|restart)/i,
-  /\b(?:vim?|nano|emacs|code|subl)\b/,
-];
-
-export function isDestructiveCommand(command: string): boolean {
-  return DESTRUCTIVE_PATTERNS.some((p) => p.test(command));
-}
+When ready, ask user to exit plan mode with /plan.`;
 
 function updateStatus(pi: ExtensionAPI, enabled: boolean, ctx: ExtensionContext): void {
   if (enabled) {
@@ -78,7 +38,7 @@ export default function (pi: ExtensionAPI): void {
   function toggle(ctx: ExtensionContext): void {
     planModeEnabled = !planModeEnabled;
     if (planModeEnabled) {
-      ctx.ui.notify("Plan mode enabled — edit/write/destructive bash blocked");
+      ctx.ui.notify("Plan mode enabled — edit/write blocked");
     } else {
       ctx.ui.notify("Plan mode disabled — full access restored");
     }
@@ -100,26 +60,17 @@ export default function (pi: ExtensionAPI): void {
   });
 
   // Shortcut
-  pi.registerShortcut(Key.ctrlShift("p"), {
+  pi.registerShortcut(Key.ctrlShift("z"), {
     description: "Toggle plan mode",
     handler: async (ctx) => toggle(ctx),
   });
 
-  // Block destructive tool calls
+  // Block edit/write tool calls
   pi.on("tool_call", async (event) => {
     if (!planModeEnabled) return;
 
-    // Block write/edit entirely
     if (event.toolName === "edit" || event.toolName === "write") {
       return { block: true, reason: BLOCK_REASON };
-    }
-
-    // Block destructive bash
-    if (event.toolName === "bash") {
-      const command = (event.input as { command?: string }).command;
-      if (command && isDestructiveCommand(command)) {
-        return { block: true, reason: BLOCK_REASON };
-      }
     }
   });
 

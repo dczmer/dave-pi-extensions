@@ -5,6 +5,8 @@
     "npx eslint*",
     "npm run*"
   ],
-  "externalAllow": [],
+  "externalAllow": [
+    "/nix*"
+  ],
   "projectDeny": []
 }
