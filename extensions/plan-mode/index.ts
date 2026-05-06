@@ -1,13 +1,15 @@
 /**
  * Plan Mode Extension
  *
- * Toggle read-only planning mode. Blocks edit/write tools.
- * Injects planning instructions into system prompt.
+ * Toggle read-only planning mode. Blocks edit/write tools and
+ * destructive bash commands. Injects planning instructions into
+ * system prompt.
  * Use /plan or --plan flag.
  */
 
 import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
 import { Key } from "@mariozechner/pi-tui";
+import { isDestructiveCommand } from "./bash-guard.ts";
 
 const BLOCK_REASON =
   "Blocked: Planning mode active. Present a plan instead — do not make changes. " +
@@ -38,7 +40,7 @@ export default function (pi: ExtensionAPI): void {
   function toggle(ctx: ExtensionContext): void {
     planModeEnabled = !planModeEnabled;
     if (planModeEnabled) {
-      ctx.ui.notify("Plan mode enabled — edit/write blocked");
+      ctx.ui.notify("Plan mode enabled — edit/write/bash blocked");
     } else {
       ctx.ui.notify("Plan mode disabled — full access restored");
     }
@@ -65,12 +67,22 @@ export default function (pi: ExtensionAPI): void {
     handler: async (ctx) => toggle(ctx),
   });
 
-  // Block edit/write tool calls
+  // Block destructive tool calls
   pi.on("tool_call", async (event) => {
     if (!planModeEnabled) return;
 
     if (event.toolName === "edit" || event.toolName === "write") {
       return { block: true, reason: BLOCK_REASON };
+    }
+
+    if (event.toolName === "bash") {
+      const command = (event.input as { command?: string }).command?.trim();
+      if (!command) return;
+
+      const reason = isDestructiveCommand(command);
+      if (reason) {
+        return { block: true, reason };
+      }
     }
   });
 
