@@ -22,7 +22,7 @@ You are in planning mode. Read and analyze only.
 Tools edit/write are disabled. Use read, grep, find, ls for exploration.
 When ready, ask user to exit plan mode with /plan.`;
 
-function updateStatus(pi: ExtensionAPI, enabled: boolean, ctx: ExtensionContext): void {
+function updateStatus(_pi: ExtensionAPI, enabled: boolean, ctx: ExtensionContext): void {
   if (enabled) {
     ctx.ui.setStatus("plan-mode", ctx.ui.theme.fg("accent", "⏸ plan"));
   } else {
@@ -84,6 +84,8 @@ export default function (pi: ExtensionAPI): void {
         return { block: true, reason };
       }
     }
+
+    return;
   });
 
   // Inject planning prompt into system prompt (ephemeral, per-turn).

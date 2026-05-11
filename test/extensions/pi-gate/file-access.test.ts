@@ -189,7 +189,7 @@ test("project file blocked by exact deny pattern", async () => {
     const result = await checkFileAccess("secret.txt", dir, configResult, ctx);
     strictEqual(result, false);
     strictEqual(ctx._notifications.length, 1);
-    strictEqual(ctx._notifications[0].level, "warning");
+    strictEqual(ctx._notifications[0]!.level, "warning");
   });
 });
 

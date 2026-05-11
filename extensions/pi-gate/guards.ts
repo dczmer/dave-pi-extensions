@@ -50,7 +50,7 @@ export function extractPathsFromCommand(command: string): string[] {
 
   // First pass: tokenize respecting quotes and substitutions
   while (i < command.length) {
-    const char = command[i];
+    const char = command[i]!;
 
     // Skip leading whitespace
     if (/\s/.test(char)) {
@@ -137,7 +137,7 @@ export function extractPathsFromCommand(command: string): string[] {
       if (j < command.length && command[j] === "-") {
         j++;
       }
-      while (j < command.length && /\s/.test(command[j]) && command[j] !== "\n") {
+      while (j < command.length && /\s/.test(command[j]!) && command[j]! !== "\n") {
         j++;
       }
       // Parse delimiter
@@ -162,8 +162,8 @@ export function extractPathsFromCommand(command: string): string[] {
         }
         if (j < command.length) j++;
       } else {
-        while (j < command.length && !/\s/.test(command[j])) {
-          delimiter += command[j];
+        while (j < command.length && !/\s/.test(command[j]!)) {
+          delimiter += command[j]!;
           j++;
         }
       }
@@ -211,7 +211,7 @@ export function extractPathsFromCommand(command: string): string[] {
     // Handle redirections
     if (/[<>]/.test(char)) {
       let j = i;
-      while (j < command.length && /[<>0-9]/.test(command[j])) {
+      while (j < command.length && /[<>0-9]/.test(command[j]!)) {
         j++;
       }
       tokens.push(command.slice(i, j));
@@ -221,7 +221,7 @@ export function extractPathsFromCommand(command: string): string[] {
 
     // Handle unquoted word
     let j = i;
-    while (j < command.length && !/\s/.test(command[j])) {
+    while (j < command.length && !/\s/.test(command[j]!)) {
       j++;
     }
     tokens.push(command.slice(i, j));
