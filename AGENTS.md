@@ -158,6 +158,42 @@ skills/
 4. Fix issues, repeat until clean
 5. Only then consider work complete
 
+## Documentation
+
+### JSDoc Comments
+
+All exported functions and interfaces must carry TSDoc/JSDoc comments.
+
+- **Summary**: Single-sentence description on the first line.
+- **Description**: Blank line, then one or more paragraphs explaining behavior, side effects, and context.
+- **`@param`**: Every parameter documented with name, type, and purpose.
+- **`@returns`**: Return value documented with type and meaning.
+- **`@deprecated`**: Use on legacy functions; reference the replacement via `{@link ...}`.
+
+```typescript
+/**
+ * Load global and project pi-gate configs, merge them, and return the
+ * combined result.  Project config lives at `{cwd}/.pi/extensions/pi-gate.json`;
+ * global config at the standard agent extensions path (overridable via
+ * `PI_GATE_GLOBAL_CONFIG_PATH`).
+ *
+ * @param cwd - Project working directory used to locate the project config.
+ * @returns Merged configuration along with the raw global and project configs
+ *          and their filesystem paths.
+ */
+export function loadConfig(cwd: string): ConfigResult { ... }
+```
+
+- Interfaces exported from a module get a descriptive one-liner:
+
+```typescript
+/** Access control configuration for pi-gate. */
+export interface PiGateConfig { ... }
+```
+
+- Keep existing comments when they already follow this style; enhance sparse ones.
+- No empty JSDoc blocks — every `@param` and `@returns` tag must carry text.
+
 ## Constraints Checklist
 
 - [ ] Only Node.js built-ins (`node:*`) and `@mariozechner/*` imports at runtime

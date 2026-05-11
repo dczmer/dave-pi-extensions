@@ -2,12 +2,14 @@ import { dirname, join } from "node:path";
 import { readFileSync, mkdirSync, writeFileSync, renameSync, existsSync } from "node:fs";
 import { homedir } from "node:os";
 
+/** Access control configuration for pi-gate. */
 export interface PiGateConfig {
   bashAllow: string[];
   externalAllow: string[];
   projectDeny: string[];
 }
 
+/** Result of loading and merging global + project configs. */
 export interface ConfigResult {
   merged: PiGateConfig;
   global: PiGateConfig;
@@ -89,6 +91,16 @@ function mergeConfigs(global: PiGateConfig, project: PiGateConfig): PiGateConfig
   };
 }
 
+/**
+ * Load global and project pi-gate configs, merge them, and return the
+ * combined result.  Project config lives at `{cwd}/.pi/extensions/pi-gate.json`;
+ * global config at the standard agent extensions path (overridable via
+ * `PI_GATE_GLOBAL_CONFIG_PATH`).
+ *
+ * @param cwd - Project working directory used to locate the project config.
+ * @returns Merged configuration along with the raw global and project configs
+ *          and their filesystem paths.
+ */
 export function loadConfig(cwd: string): ConfigResult {
   const globalPath = getGlobalConfigPath();
   const projectPath = join(cwd, ".pi", "extensions", "pi-gate.json");
@@ -106,6 +118,13 @@ export function loadConfig(cwd: string): ConfigResult {
   };
 }
 
+/**
+ * Atomically save a pi-gate config to the given path.  Writes to a temporary
+ * file first, then renames it over the target to avoid corruption.
+ *
+ * @param config - The configuration object to persist.
+ * @param configPath - Absolute filesystem path for the JSON file.
+ */
 export function saveConfig(config: PiGateConfig, configPath: string): void {
   const tempPath = configPath + ".tmp";
 

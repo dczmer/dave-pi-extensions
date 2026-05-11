@@ -23,7 +23,13 @@ import type { ExtensionContext } from "./prompts.ts";
 // Command parsing
 // ---------------------------------------------------------------------------
 
-/** Parse command into individual statements. Returns null on parse failure. */
+/**
+ * Parse a bash command into individual logical statements.
+ *
+ * @param command - Raw bash command string.
+ * @returns Array of statement text strings, or `null` if parsing failed
+ *          (including when heredocs are present, which are not supported).
+ */
 export function parseCommandStatements(command: string): string[] | null {
   if (command.includes("<<")) return null;
   try {
@@ -179,6 +185,20 @@ async function checkSingleCommand(
   return true;
 }
 
+/**
+ * Check whether a bash tool call should be allowed.
+ *
+ * Splits the command into individual statements, matches each against
+ * configured and session bash-allow globs, prompts the user for new commands,
+ * and recursively checks any file paths referenced by the command against the
+ * file-access policy.
+ *
+ * @param command - Raw bash command string.
+ * @param cwd - Project working directory.
+ * @param configResult - Loaded & merged pi-gate config.
+ * @param ctx - Pi extension context providing UI and persistence helpers.
+ * @returns `true` if all statements and their file references are allowed.
+ */
 export async function checkBashCommand(
   command: string,
   cwd: string,

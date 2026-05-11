@@ -1,6 +1,13 @@
 /**
- * Minimal glob matching supporting `*` (any chars, including empty)
- * and `?` (single char). Matches full strings.
+ * Match a full string against a glob pattern.
+ *
+ * Supports `*` (zero or more characters) and `?` (exactly one character).
+ * The entire value must match the pattern; there is no implicit `*` at either
+ * end.
+ *
+ * @param value - The concrete string to test.
+ * @param pattern - A glob pattern possibly containing `*` and `?`.
+ * @returns `true` if the value satisfies the pattern.
  */
 export function matchesGlob(value: string, pattern: string): boolean {
   let v = 0;
@@ -35,7 +42,14 @@ export function matchesGlob(value: string, pattern: string): boolean {
   return p === pattern.length;
 }
 
-/** Match value against any pattern in the list. */
+/**
+ * Test whether a value matches at least one pattern in the provided list.
+ * Short-circuits on the first match.
+ *
+ * @param value - The concrete string to test.
+ * @param patterns - List of glob patterns.
+ * @returns `true` if any pattern matches the value.
+ */
 export function matchesAnyGlob(value: string, patterns: string[]): boolean {
   for (const pattern of patterns) {
     if (matchesGlob(value, pattern)) return true;

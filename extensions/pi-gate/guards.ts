@@ -1,6 +1,11 @@
 /**
- * Expand `~`, resolve relative paths against cwd, and normalize.
- * Removes `.`, handles `..`, and collapses multiple slashes.
+ * Expand `~`, resolve relative paths against `cwd`, and normalize.
+ * Removes `.` segments, resolves `..` segments, and collapses multiple
+ * consecutive slashes.
+ *
+ * @param filePath - Raw path from user input or tool call.
+ * @param cwd - Current working directory for relative resolution.
+ * @returns A clean absolute path with no redundant segments.
  */
 import { homedir } from "node:os";
 
@@ -29,7 +34,13 @@ export function normalizePath(filePath: string, cwd: string): string {
   return "/" + result.join("/");
 }
 
-/** Classify a path as inside the project (`cwd`) or external. */
+/**
+ * Determine whether a path belongs to the project tree or lies outside it.
+ *
+ * @param filePath - Already-normalized absolute path.
+ * @param cwd - Normalized project root.
+ * @returns `"project"` if the path is under `cwd`, `"external"` otherwise.
+ */
 export function classifyPath(
   filePath: string,
   cwd: string,
@@ -42,7 +53,15 @@ export function classifyPath(
   return "external";
 }
 
-/** Bash-aware tokenizer: extracts potential file-path args, respecting quotes. */
+/**
+ * Tokenize a bash command string and extract positional arguments that look
+ * like file paths.  Respects quoting (single, double, ANSI-C), skips heredocs,
+ * command/process substitution bodies, redirection operators, and shell control
+ * operators.
+ *
+ * @param command - Raw bash command string.
+ * @returns Array of tokens that may represent file-system paths.
+ */
 export function extractPathsFromCommand(command: string): string[] {
   const paths: string[] = [];
   const tokens: string[] = [];

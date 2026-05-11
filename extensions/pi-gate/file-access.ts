@@ -6,6 +6,20 @@ import { isExternalApproved, approveExternal } from "./session.ts";
 import { promptAllowDeny, confirmAddToConfigWithTarget, promptPattern } from "./prompts.ts";
 import type { ExtensionContext } from "./prompts.ts";
 
+/**
+ * Determine whether a file-access tool call should be allowed.
+ *
+ * Project paths are checked against `projectDeny` patterns; external paths
+ * must match an `externalAllow` pattern or receive explicit user approval.
+ * When the user approves an external path they are also prompted to persist a
+ * glob pattern to the project or global config.
+ *
+ * @param filePath - Raw path from the tool call input.
+ * @param cwd - Project working directory.
+ * @param configResult - Loaded & merged pi-gate config.
+ * @param ctx - Pi extension context providing UI and persistence helpers.
+ * @returns `true` if access should be permitted, `false` to block the call.
+ */
 export async function checkFileAccess(
   filePath: string,
   cwd: string,

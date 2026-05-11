@@ -3,6 +3,14 @@ import { loadConfig, type ConfigResult } from "./config.ts";
 import { checkBashCommand } from "./bash-guard.ts";
 import { checkFileAccess } from "./file-access.ts";
 
+/**
+ * pi-gate extension: permissive-by-default file & bash access gate.
+ *
+ * Hooks into `tool_call` events to intercept `bash`, `read`, `write`,
+ * `edit`, `grep`, and `find` tool invocations.  Project paths are allowed
+ * unless they match a `projectDeny` pattern; external paths and new bash
+ * commands require explicit user approval during the session.
+ */
 export default function (pi: ExtensionAPI) {
   pi.on("tool_call", async (event, ctx) => {
     const configResult: ConfigResult = loadConfig(ctx.cwd);
