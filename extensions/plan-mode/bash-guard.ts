@@ -90,7 +90,20 @@ const WRITE_REDIRECTS = new Set([
 
 // ── Public API ─────────────────────────────────────────────────
 
-/** Returns null if command is safe, or a blocking reason string. */
+/**
+ * Analyze a shell command and decide if it is destructive.
+ *
+ * Parses the command with bash-parser to build an AST, then walks every
+ * command node checking for:
+ * - Hard-blocked command names (rm, npm, docker, etc.)
+ * - Write redirects (>, >>, >|) to real files (not /dev/null or fds)
+ * - git/nix subcommands that mutate state
+ * - curl output flags (-o, -O, --output)
+ *
+ * @param command - The raw shell command string to inspect.
+ * @returns `null` if the command is safe, otherwise a human-readable
+ *          reason string explaining why it was blocked.
+ */
 export function isDestructiveCommand(command: string): string | null {
   let ast;
   try {

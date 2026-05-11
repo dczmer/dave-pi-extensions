@@ -30,6 +30,17 @@ function updateStatus(_pi: ExtensionAPI, enabled: boolean, ctx: ExtensionContext
   }
 }
 
+/**
+ * Register the plan-mode extension.
+ *
+ * Installs a CLI flag (`--plan`), a slash command (`/plan`), a keyboard
+ * shortcut (Ctrl-Shift-Z), and event hooks that enforce read-only mode.
+ * When active, edit/write tools and destructive bash commands are blocked,
+ * and a planning prompt is injected into the system message.  Toggle state
+ * is persisted in session history so it survives restarts.
+ *
+ * @param pi - Extension API instance provided by the pi agent harness.
+ */
 export default function (pi: ExtensionAPI): void {
   let planModeEnabled = false;
 

@@ -10,9 +10,10 @@ Pi package bundling extensions, themes, prompts for pi coding agent. Developed o
 - **Node.js**: Runtime and test runner for all code
 - **Allowed Dependencies**:
   - `@mariozechner/*` - Pi SDK packages
+  - `bash-parser` - Accurate parsing of complex bash command strings
   - `@types/node` - Node.js types (dev dependency)
   - `typescript` - TypeScript compiler (dev dependency)
-- **No external deps** ever
+- No other runtime deps; keep dependencies minimal
 
 ## Dependencies
 
@@ -33,27 +34,49 @@ Node modules managed at project root only. All extensions use shared dependencie
 
 **Tests must NEVER modify real user configuration files.**
 
-When testing features that persist to user directories (e.g., `~/.pi/agent/extensions/`):
-- Use environment variables to override config paths to temp directories
-- Use `process.env.MY_EXTENSION_CONFIG_PATH` pattern in code
-- Wrap test operations in `try/finally` to clean up env vars
-- Verify isolation by checking the real config file is untouched after tests
+Mock `node:fs` functions to intercept file reads and writes. Use
+`t.mock.method` from `node:test`. Mocks auto-restore when the test ends.
+
+**Requirements for mockable code:**
+- Source uses namespace import: `import * as fs from "node:fs"`
+- Source calls methods on the namespace: `fs.readFileSync(...)`
+- Do NOT destructure imports (`import { readFileSync }`) — those capture
+  function references at import time and cannot be mocked.
 
 **Example pattern:**
-```typescript
-// In implementation
-const configPath = process.env.MY_EXTENSION_CONFIG_PATH ?? 
-  join(homedir(), ".pi", "agent", "extensions", "my-ext.json");
 
-// In tests
-const tempConfigPath = join(tempDir, "test-config.json");
-process.env.MY_EXTENSION_CONFIG_PATH = tempConfigPath;
-try {
-  // run test
-} finally {
-  delete process.env.MY_EXTENSION_CONFIG_PATH;
-}
+```typescript
+import * as fs from "node:fs";
+import { test } from "node:test";
+
+test("config saves to in-memory fs", async (t) => {
+  // In-memory filesystem for the test
+  const files = new Map<string, string>();
+
+  t.mock.method(fs, "existsSync", (p: fs.PathOrFileDescriptor) =>
+    files.has(String(p))
+  );
+  t.mock.method(fs, "readFileSync", (p, opts) => {
+    const content = files.get(String(p));
+    if (content === undefined) throw new Error("ENOENT");
+    return content;
+  });
+  t.mock.method(fs, "writeFileSync", (p, data) => {
+    files.set(String(p), String(data));
+  });
+  t.mock.method(fs, "mkdirSync", () => undefined);
+  t.mock.method(fs, "renameSync", (oldP, newP) => {
+    files.set(String(newP), files.get(String(oldP)) ?? "");
+  });
+
+  // ... test uses the in-memory store, no real fs touched ...
+});
 ```
+
+- Never write to `process.env` to redirect config paths
+- Prefer mocks scoped to `t` — auto-cleanup on test completion
+- Where mocking is impractical (e.g., tests that need real fs for
+  `mkdtempSync`), isolate with temp dirs and `rmSync` in `finally`
 
 ## Project Structure
 
@@ -196,7 +219,7 @@ export interface PiGateConfig { ... }
 
 ## Constraints Checklist
 
-- [ ] Only Node.js built-ins (`node:*`) and `@mariozechner/*` imports at runtime
+- [ ] Only Node.js built-ins (`node:*`), `@mariozechner/*`, and `bash-parser` imports at runtime
 - [ ] Dev dependencies (`typescript`, `@types/node`) allowed with manual install
 - [ ] Tests use `node:test` and `node:assert`
 - [ ] Project `package.json` and extension `tsconfig.json` present
