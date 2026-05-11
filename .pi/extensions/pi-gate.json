@@ -3,7 +3,8 @@
     "task*",
     "which tsc eslint",
     "npx eslint*",
-    "npm run*"
+    "npm run*",
+    "npx tsc *"
   ],
   "externalAllow": [
     "/nix*"
