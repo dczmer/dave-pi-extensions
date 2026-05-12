@@ -32,9 +32,9 @@ export function renderProgressBar(used: number, max: number, width: number, them
 
   let bar = filledFull > 0 ? theme.fg(color, '█'.repeat(filledFull)) : '';
   if (filledFull < width) {
-    const partialChar = partial === 0 ? theme.fg('dim', BAR_CHARS[0]) : theme.fg(color, BAR_CHARS[partial]);
+    const partialChar = partial === 0 ? ' ' : theme.fg(color, BAR_CHARS[partial]);
     bar += partialChar;
-    bar += theme.fg('dim', BAR_CHARS[0].repeat(width - filledFull - 1));
+    bar += ' '.repeat(width - filledFull - 1);
   }
 
   return theme.fg('border', '[') + bar + theme.fg('border', ']');

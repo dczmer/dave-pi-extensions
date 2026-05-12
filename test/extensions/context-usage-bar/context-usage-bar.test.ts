@@ -14,10 +14,10 @@ test('renderProgressBar returns empty string when width < 1', () => {
   strictEqual(renderProgressBar(0, 100, 0, theme), '');
 });
 
-test('renderProgressBar at 0% shows dim track inside border brackets', () => {
+test('renderProgressBar at 0% shows empty track inside border brackets', () => {
   const theme = mockTheme();
   const result = renderProgressBar(0, 100, 5, theme);
-  strictEqual(result, '<border>[</border><dim>░</dim><dim>░░░░</dim><border>]</border>');
+  strictEqual(result, '<border>[</border>     <border>]</border>');
 });
 
 test('renderProgressBar at 100% shows all filled blocks inside border brackets', () => {
@@ -26,11 +26,11 @@ test('renderProgressBar at 100% shows all filled blocks inside border brackets',
   strictEqual(result, '<border>[</border><success>█████</success><border>]</border>');
 });
 
-test('renderProgressBar at 50% shows half filled with dim track remainder', () => {
+test('renderProgressBar at 50% shows half filled with space track remainder', () => {
   const theme = mockTheme();
   const result = renderProgressBar(50, 100, 10, theme);
-  // 50% of 10 = 5.0 exact, partial = 0 -> dim track char
-  strictEqual(result, '<border>[</border><success>█████</success><dim>░</dim><dim>░░░░</dim><border>]</border>');
+  // 50% of 10 = 5.0 exact, partial = 0 -> space track char
+  strictEqual(result, '<border>[</border><success>█████</success>     <border>]</border>');
 });
 
 test('renderProgressBar uses partial block for non-integer fills', () => {
@@ -39,7 +39,7 @@ test('renderProgressBar uses partial block for non-integer fills', () => {
   // 37% of 10 = 3.7, filledFull = 3, partial = floor(0.7*8)=5 -> BAR_CHARS[5]='▋'
   strictEqual(
     result,
-    '<border>[</border><success>███</success><success>▋</success><dim>░░░░░░</dim><border>]</border>',
+    '<border>[</border><success>███</success><success>▋</success>      <border>]</border>',
   );
 });
 
