@@ -8,7 +8,8 @@
     "npx ts-node *",
     "npx tsx *",
     "npx eslint*",
-    "mdl*"
+    "mdl*",
+    "python3 *"
   ],
   "externalAllow": [
     "/nix*"
