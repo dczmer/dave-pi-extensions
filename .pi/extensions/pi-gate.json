@@ -5,7 +5,9 @@
     "npx eslint*",
     "npm run*",
     "npx tsc *",
-    "npx prettier*"
+    "npx prettier*",
+    "npx ts-node *",
+    "npx tsx *"
   ],
   "externalAllow": [
     "/nix*"
