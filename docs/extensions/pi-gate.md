@@ -1,8 +1,8 @@
 # pi-gate
 
-> TODO: temporarily delete existing configs and generate some confirmation prompts for screen shots.
-
 A "guard rails" system for restricting bash commands and external file access by the agent.
+
+![pi-gate-deny](../images/pi-gate-deny.png)
 
 Design philosophy:
 
@@ -69,9 +69,13 @@ All bash commands are parsed into an AST using [bash-parser](https://github.com/
 
 This isn't perfect. It turns out parsing bash commands can get pretty complicated. Instead of trying to make something strong enough to block Mythos from trying to escape my sandbox, I'm focused on just stopping a confused agent from making a mess.
 
+![pi-gate-glob](../images/pi-gate-glob.png)
+
 ## External Files
 
 External files (outside of the project root directory) are also protected. I have hooked into the Read, Write, Edit, Find, Grep tools to compare the target file paths, and we extract file paths from any Bash tool calls and compare those as well.
+
+![pi-gate-path](../images/pi-gate-path.png)
 
 ## Session
 
@@ -82,6 +86,8 @@ Example: If you approve the pattern `*` for a bash prompt and do not save it to 
 ## Configuration
 
 I have split the configuration into global and project level settings files. Since we only have a very simple opt-in pattern, we don't have to implement any kind of override logic. We don't even care about order or which file takes precedence. The lists are simply joined together into an effective working white-list.
+
+![pi-gate-save](../images/pi-gate-save.png)
 
 The global config file:
 ```
