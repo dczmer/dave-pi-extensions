@@ -11,13 +11,14 @@ import type { ExtensionAPI, ExtensionContext } from '@mariozechner/pi-coding-age
 import { truncateToWidth, visibleWidth } from '@mariozechner/pi-tui';
 
 // Progress bar characters (8 steps for smooth bar)
-const BAR_CHARS = [' ', '▏', '▎', '▍', '▌', '▋', '▊', '▉', '█'];
+const BAR_CHARS = ['░', '▏', '▎', '▍', '▌', '▋', '▊', '▉', '█'] as const;
 
 const YELLOW_THRESHOLD = 80_000;
 const RED_THRESHOLD = 120_000;
 
-function renderProgressBar(used: number, max: number, width: number, theme: any): string {
-  if (width < 3) return '';
+/** Render a terminal progress bar with border and visible empty track. */
+export function renderProgressBar(used: number, max: number, width: number, theme: any): string {
+  if (width < 1) return '';
 
   const ratio = Math.min(used / max, 1);
   const filledWidth = ratio * width;
@@ -29,16 +30,18 @@ function renderProgressBar(used: number, max: number, width: number, theme: any)
   else if (used >= YELLOW_THRESHOLD) color = 'warning';
   else color = 'success';
 
-  let bar = theme.fg(color, '█'.repeat(filledFull));
+  let bar = filledFull > 0 ? theme.fg(color, '█'.repeat(filledFull)) : '';
   if (filledFull < width) {
-    bar += theme.fg(color, BAR_CHARS[partial]);
-    bar += ' '.repeat(width - filledFull - 1);
+    const partialChar = partial === 0 ? theme.fg('dim', BAR_CHARS[0]) : theme.fg(color, BAR_CHARS[partial]);
+    bar += partialChar;
+    bar += theme.fg('dim', BAR_CHARS[0].repeat(width - filledFull - 1));
   }
 
-  return bar;
+  return theme.fg('border', '[') + bar + theme.fg('border', ']');
 }
 
-function formatTokens(n: number): string {
+/** Format a token count into a compact human-readable string. */
+export function formatTokens(n: number): string {
   if (n < 1000) return `${n}`;
   if (n < 1000000) return `${(n / 1000).toFixed(1)}k`;
   return `${(n / 1000000).toFixed(1)}M`;
