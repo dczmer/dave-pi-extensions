@@ -8,11 +8,14 @@ Pi package bundling extensions, themes, prompts for pi coding agent. Developed o
 
 - **Nix**: Flake-based devShell in `flake.nix`
 - **Node.js**: Runtime and test runner for all code
-- **Allowed Dependencies**:
-  - `@mariozechner/*` - Pi SDK packages
-  - `bash-parser` - Accurate parsing of complex bash command strings
-  - `@types/node` - Node.js types (dev dependency)
-  - `typescript` - TypeScript compiler (dev dependency)
+- **Runtime / Peer Dependencies**:
+  - `@mariozechner/pi` — Pi SDK peer dependency
+  - `@mariozechner/pi-coding-agent` — Pi coding agent peer dependency
+  - `bash-parser` — Accurate parsing of complex bash command strings
+- **Dev Dependencies**:
+  - `@types/node` — Node.js types
+  - `typescript` — TypeScript compiler
+  - `@eslint/js`, `eslint`, `prettier`, `typescript-eslint`, `typescript-language-server` — Linting and formatting
 - No other runtime deps; keep dependencies minimal
 
 ## Dependencies
@@ -27,7 +30,7 @@ Node modules managed at project root only. All extensions use shared dependencie
 
 - Run tests: `npm test` (tests live under `test/extensions/EXTENSION_NAME/`)
 - Type check: `npm run typecheck`
-- Lint: `npx eslint extensions/`
+- Lint: `npx eslint .`
 - **Permission prompts**: If tests fail due permissions, ask user which flags to add
 
 ### Test Isolation (CRITICAL)
@@ -67,36 +70,40 @@ are no impedance mismatches with the code under test, and cleanup is automatic.
 
 When testing code that **consumes** a `ConfigResult` (e.g., `checkBashCommand`,
 `checkFileAccess`), do not call `loadConfig(cwd)` with temp directories and env
-var overrides.  Instead, mock the config module's exports directly with
-`t.mock.method`:
+var overrides.  Instead, build a fake `ConfigResult` with a helper and pass it
+directly to the function under test:
 
 ```typescript
-import * as config from "../../../extensions/pi-gate/config.ts";
-import { test } from "node:test";
+import { type ConfigResult } from "../../../extensions/pi-gate/config.ts";
 
-test("command checked against mocked config", async (t) => {
-  const fakeResult: config.ConfigResult = {
-    merged:  { bashAllow: ["cat *"], externalAllow: [], projectDeny: [] },
-    global:  { bashAllow: [],        externalAllow: [], projectDeny: [] },
-    project: { bashAllow: ["cat *"], externalAllow: [], projectDeny: [] },
-    globalPath:  "/fake/global.json",
+function createConfigResult(overrides?: Partial<ConfigResult>): ConfigResult {
+  const empty = () => ({
+    bashAllow: [] as string[],
+    externalAllow: [] as string[],
+    projectDeny: [] as string[],
+  });
+  return {
+    merged: { ...empty(), ...(overrides?.merged || {}) },
+    global: { ...empty(), ...(overrides?.global || {}) },
+    project: { ...empty(), ...(overrides?.project || {}) },
+    globalPath: "/fake/global.json",
     projectPath: "/fake/project.json",
+    ...overrides,
   };
+}
 
-  t.mock.method(config, "loadConfig", () => fakeResult);
-  t.mock.method(config, "saveConfig", () => {});
-
-  // ... test code that calls loadConfig / saveConfig ...
-});
+// ... inside a test:
+const configResult = createConfigResult({ merged: { bashAllow: ["cat *"] } });
+const allowed = await checkBashCommand("cat file.txt", cwd, configResult, ctx);
 ```
 
 - **Config module itself** (`config.test.ts`): tests that validate `loadConfig`
   and `saveConfig` behavior should use tempfs directories (above).  They are
   testing the real config module, not consuming it.
-- **Consumer modules** (`bash-guard.test.ts`, `file-access.test.ts`): mock
-  `loadConfig`/`saveConfig` to return crafted `ConfigResult` objects.  This
-  eliminates the need for temp directories and, critically, for `process.env`
-  overrides.
+- **Consumer modules** (`bash-guard.test.ts`, `file-access.test.ts`): craft
+  `ConfigResult` objects with a helper and pass them directly to the function
+  under test.  This eliminates the need for temp directories and, critically,
+  for `process.env` overrides.
 
 #### Environment variable isolation
 
@@ -124,10 +131,13 @@ test("command checked against mocked config", async (t) => {
 ├── themes/         # JSON theme files (*.json)
 ├── prompts/        # Prompt templates (*.md)
 ├── skills/         # Pi skills — one subdirectory per skill
+├── src/            # Shared source code and type declarations
 ├── plans/          # Implementation plans (not a pi resource)
 ├── flake.nix       # Nix devShell
 └── package.json    # Pi package manifest
 ```
+
+`skills/` and `prompts/` may be empty or absent when unused.
 
 ### Extension Placement
 
@@ -144,8 +154,7 @@ extensions/
 extensions/
 └── my-extension/
     ├── index.ts            # Entry point (exports default function)
-    ├── helper.ts           # Additional modules
-    └── tsconfig.json       # TypeScript config (uses project node_modules)
+    └── helper.ts           # Additional modules
 ```
 
 - Entry point must be `index.ts` inside extension directory
@@ -168,36 +177,6 @@ test/
 - Import source with `../../../extensions/my-extension/foo.ts`
 - Run with `node --test test/**/*.test.ts`
 
-### Theme Placement
-
-```
-themes/
-└── my-theme.json           # Theme file (JSON, pi theme format)
-```
-
-### Prompt Placement
-
-```
-prompts/
-└── my-template.md          # Prompt template (markdown)
-```
-
-### Skill Placement
-
-```
-skills/
-└── my-skill/
-    └── SKILL.md            # Skill definition (Agent Skills standard)
-```
-
-## Package Manifest
-
-`package.json` defines pi package with `pi` field:
-- `extensions`: paths to extension dirs (pi auto-discovers `*.ts` and `*/index.ts`)
-- `skills`: paths to skill dirs (pi discovers `*/SKILL.md`)
-- `prompts`: paths to prompt dirs (pi discovers `*.md`)
-- `themes`: paths to theme dirs (pi discovers `*.json`)
-
 ## Development Workflow
 
 1. Edit code
@@ -205,7 +184,7 @@ skills/
 3. Run verification commands in order:
    - `npm test` — run all tests
    - `npm run typecheck` — type check
-   - `npx eslint extensions/` — lint
+   - `npx eslint .` — lint
 4. Fix issues, repeat until clean
 5. Only then consider work complete
 
@@ -214,26 +193,6 @@ skills/
 ### JSDoc Comments
 
 All exported functions and interfaces must carry TSDoc/JSDoc comments.
-
-- **Summary**: Single-sentence description on the first line.
-- **Description**: Blank line, then one or more paragraphs explaining behavior, side effects, and context.
-- **`@param`**: Every parameter documented with name, type, and purpose.
-- **`@returns`**: Return value documented with type and meaning.
-- **`@deprecated`**: Use on legacy functions; reference the replacement via `{@link ...}`.
-
-```typescript
-/**
- * Load global and project pi-gate configs, merge them, and return the
- * combined result.  Project config lives at `{cwd}/.pi/extensions/pi-gate.json`;
- * global config at the standard agent extensions path (overridable via
- * `PI_GATE_GLOBAL_CONFIG_PATH`).
- *
- * @param cwd - Project working directory used to locate the project config.
- * @returns Merged configuration along with the raw global and project configs
- *          and their filesystem paths.
- */
-export function loadConfig(cwd: string): ConfigResult { ... }
-```
 
 - Interfaces exported from a module get a descriptive one-liner:
 
@@ -250,5 +209,5 @@ export interface PiGateConfig { ... }
 - [ ] Only Node.js built-ins (`node:*`), `@mariozechner/*`, and `bash-parser` imports at runtime
 - [ ] Dev dependencies (`typescript`, `@types/node`) allowed with manual install
 - [ ] Tests use `node:test` and `node:assert`
-- [ ] Project `package.json` and extension `tsconfig.json` present
+- [ ] Project `package.json` and root `tsconfig.json` present
 - [ ] All verification commands pass before finishing
