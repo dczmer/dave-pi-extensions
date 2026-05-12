@@ -7,19 +7,14 @@
  * the left side.
  */
 
-import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
-import { truncateToWidth, visibleWidth } from "@mariozechner/pi-tui";
+import type { ExtensionAPI, ExtensionContext } from '@mariozechner/pi-coding-agent';
+import { truncateToWidth, visibleWidth } from '@mariozechner/pi-tui';
 
 // Progress bar characters (8 steps for smooth bar)
-const BAR_CHARS = [" ", "▏", "▎", "▍", "▌", "▋", "▊", "▉", "█"];
+const BAR_CHARS = [' ', '▏', '▎', '▍', '▌', '▋', '▊', '▉', '█'];
 
-function renderProgressBar(
-  used: number,
-  max: number,
-  width: number,
-  theme: any
-): string {
-  if (width < 3) return "";
+function renderProgressBar(used: number, max: number, width: number, theme: any): string {
+  if (width < 3) return '';
 
   const ratio = Math.min(used / max, 1);
   const filledWidth = ratio * width;
@@ -27,14 +22,14 @@ function renderProgressBar(
   const partial = Math.floor((filledWidth - filledFull) * 8);
 
   let color: string;
-  if (ratio <= 0.4) color = "success";
-  else if (ratio <= 0.6) color = "warning";
-  else color = "error";
+  if (ratio <= 0.4) color = 'success';
+  else if (ratio <= 0.6) color = 'warning';
+  else color = 'error';
 
-  let bar = theme.fg(color, "█".repeat(filledFull));
+  let bar = theme.fg(color, '█'.repeat(filledFull));
   if (filledFull < width) {
     bar += theme.fg(color, BAR_CHARS[partial]);
-    bar += " ".repeat(width - filledFull - 1);
+    bar += ' '.repeat(width - filledFull - 1);
   }
 
   return bar;
@@ -58,7 +53,7 @@ function installFooter(ctx: ExtensionContext) {
         const model = ctx.model;
 
         // --- Left side: context bar ---
-        let contextSection = "";
+        let contextSection = '';
         if (usage && model?.contextWindow) {
           const used = usage.tokens ?? 0;
           const max = model.contextWindow;
@@ -67,29 +62,26 @@ function installFooter(ctx: ExtensionContext) {
           const barWidth = Math.min(20, Math.floor(width * 0.15));
           const bar = renderProgressBar(used, max, barWidth, theme);
 
-          contextSection = `${bar} ${theme.fg("dim", `${percent}%`)} ${theme.fg(
-            "muted",
-            `(${formatTokens(used)}/${formatTokens(max)})`
+          contextSection = `${bar} ${theme.fg('dim', `${percent}%`)} ${theme.fg(
+            'muted',
+            `(${formatTokens(used)}/${formatTokens(max)})`,
           )}`;
         }
 
         // --- Right side: extension statuses + model info ---
         const statuses = [...footerData.getExtensionStatuses().values()];
-        const statusPrefix = statuses.length > 0 ? statuses.join(" ") + "  " : "";
+        const statusPrefix = statuses.length > 0 ? statuses.join(' ') + '  ' : '';
 
         const branch = footerData.getGitBranch();
-        const modelId = model?.id || "no-model";
-        const provider = model?.provider || "unknown";
-        const right = statusPrefix + theme.fg(
-          "dim",
-          `${provider}/${modelId}${branch ? ` (${branch})` : ""}`
-        );
+        const modelId = model?.id || 'no-model';
+        const provider = model?.provider || 'unknown';
+        const right = statusPrefix + theme.fg('dim', `${provider}/${modelId}${branch ? ` (${branch})` : ''}`);
 
         // Calculate spacing
         const leftWidth = visibleWidth(contextSection);
         const rightWidth = visibleWidth(right);
         const padWidth = Math.max(1, width - leftWidth - rightWidth);
-        const pad = " ".repeat(padWidth);
+        const pad = ' '.repeat(padWidth);
 
         return [truncateToWidth(contextSection + pad + right, width)];
       },
@@ -100,29 +92,29 @@ function installFooter(ctx: ExtensionContext) {
 export default function (pi: ExtensionAPI) {
   let enabled = true;
 
-  pi.registerCommand("context-bar", {
-    description: "Toggle context usage progress bar",
+  pi.registerCommand('context-bar', {
+    description: 'Toggle context usage progress bar',
     handler: async (_args, ctx) => {
       enabled = !enabled;
       if (enabled) {
         installFooter(ctx);
-        ctx.ui.notify("Context usage bar enabled", "info");
+        ctx.ui.notify('Context usage bar enabled', 'info');
       } else {
         ctx.ui.setFooter(undefined);
-        ctx.ui.notify("Context usage bar disabled", "info");
+        ctx.ui.notify('Context usage bar disabled', 'info');
       }
     },
   });
 
   // Auto-enable on session start
-  pi.on("session_start", async (_event, ctx) => {
+  pi.on('session_start', async (_event, ctx) => {
     if (enabled) {
       installFooter(ctx);
     }
   });
 
   // Update on model changes
-  pi.on("model_select", async () => {
+  pi.on('model_select', async () => {
     // Footer re-renders automatically from context usage update
   });
 }

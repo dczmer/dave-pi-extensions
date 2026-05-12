@@ -1,4 +1,4 @@
-import { matchesGlob } from "./matcher.ts";
+import { matchesGlob } from './matcher.ts';
 
 /** Per-session approvals that expire when pi exits. */
 export interface SessionState {

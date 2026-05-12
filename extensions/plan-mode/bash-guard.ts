@@ -10,82 +10,182 @@
  * Returns null if command appears safe, or a blocking reason string.
  */
 
-import { parseBashCommand, walkCommands } from "../../src/bash-parser.ts";
-import type { AstCommand, AstWord, AstRedirect } from "../../src/bash-parser.ts";
+import { parseBashCommand, walkCommands } from '../../src/bash-parser.ts';
+import type { AstCommand, AstWord, AstRedirect } from '../../src/bash-parser.ts';
 
 // ── Destructive commands (always block) ───────────────────────
 
 const DESTRUCTIVE_COMMANDS = new Set([
   // File deletion
-  "rm", "rmdir", "unlink", "shred",
+  'rm',
+  'rmdir',
+  'unlink',
+  'shred',
   // File modification / creation
-  "mv", "cp", "mkdir", "touch", "ln", "install", "dd", "truncate",
-  "rename",
+  'mv',
+  'cp',
+  'mkdir',
+  'touch',
+  'ln',
+  'install',
+  'dd',
+  'truncate',
+  'rename',
   // Permissions
-  "chmod", "chown", "chgrp", "chattr",
+  'chmod',
+  'chown',
+  'chgrp',
+  'chattr',
   // Mount / swap
-  "mount", "umount", "losetup", "swapon", "swapoff",
+  'mount',
+  'umount',
+  'losetup',
+  'swapon',
+  'swapoff',
   // Users / groups
-  "useradd", "usermod", "userdel", "groupadd", "groupmod", "groupdel", "passwd",
+  'useradd',
+  'usermod',
+  'userdel',
+  'groupadd',
+  'groupmod',
+  'groupdel',
+  'passwd',
   // Services / system
-  "systemctl", "service",
+  'systemctl',
+  'service',
   // Process termination
-  "kill", "killall", "pkill", "reboot", "shutdown", "poweroff", "halt",
+  'kill',
+  'killall',
+  'pkill',
+  'reboot',
+  'shutdown',
+  'poweroff',
+  'halt',
   // Scheduling
-  "crontab", "at", "batch",
+  'crontab',
+  'at',
+  'batch',
   // Package managers
-  "npm", "npx", "yarn", "pnpm",
-  "pip", "pip3",
-  "gem", "bundle", "cargo", "rustup",
-  "brew",
-  "apt", "apt-get", "dpkg", "yum", "dnf", "rpm", "pacman", "emerge", "zypper",
-  "nix-env", "nixos-rebuild", "snap", "flatpak",
+  'npm',
+  'npx',
+  'yarn',
+  'pnpm',
+  'pip',
+  'pip3',
+  'gem',
+  'bundle',
+  'cargo',
+  'rustup',
+  'brew',
+  'apt',
+  'apt-get',
+  'dpkg',
+  'yum',
+  'dnf',
+  'rpm',
+  'pacman',
+  'emerge',
+  'zypper',
+  'nix-env',
+  'nixos-rebuild',
+  'snap',
+  'flatpak',
   // Container / VM
-  "docker", "podman", "kubectl", "helm",
+  'docker',
+  'podman',
+  'kubectl',
+  'helm',
   // Downloaders (always write files)
-  "wget",
+  'wget',
   // Editors
-  "vim", "vi", "nvim", "nano", "emacs", "code", "subl", "gedit",
+  'vim',
+  'vi',
+  'nvim',
+  'nano',
+  'emacs',
+  'code',
+  'subl',
+  'gedit',
   // Remote copy
-  "scp", "rsync", "sftp",
+  'scp',
+  'rsync',
+  'sftp',
   // Archive creation
-  "zip", "tar", "gzip", "bzip2", "xz", "7z", "compress",
+  'zip',
+  'tar',
+  'gzip',
+  'bzip2',
+  'xz',
+  '7z',
+  'compress',
   // IaC
-  "terraform", "pulumi",
+  'terraform',
+  'pulumi',
   // GitHub / GitLab CLIs
-  "gh", "glab",
+  'gh',
+  'glab',
   // Build tools / compilers
-  "make", "cmake", "gcc", "g++", "clang", "clang++",
+  'make',
+  'cmake',
+  'gcc',
+  'g++',
+  'clang',
+  'clang++',
   // Always writes to files
-  "tee",
+  'tee',
 ]);
 
 // ── Git read-only subcommands ──────────────────────────────────
 
 const GIT_READONLY = new Set([
-  "status", "log", "diff", "show", "branch", "tag", "remote",
-  "stash", // only "list" is safe but we check that inline
-  "grep", "blame",
-  "ls-files", "ls-tree", "ls-remote",
-  "rev-parse", "rev-list", "describe", "config",
-  "fetch", "shortlog", "reflog", "help", "version", "whatchanged",
+  'status',
+  'log',
+  'diff',
+  'show',
+  'branch',
+  'tag',
+  'remote',
+  'stash', // only "list" is safe but we check that inline
+  'grep',
+  'blame',
+  'ls-files',
+  'ls-tree',
+  'ls-remote',
+  'rev-parse',
+  'rev-list',
+  'describe',
+  'config',
+  'fetch',
+  'shortlog',
+  'reflog',
+  'help',
+  'version',
+  'whatchanged',
 ]);
 
 // ── Nix read-only subcommands ─────────────────────────────────
 
 const NIX_READONLY = new Set([
-  "eval", "flake", "store", "show-config", "repl", "search",
-  "derivation", "path-info", "hash", "why-depends",
+  'eval',
+  'flake',
+  'store',
+  'show-config',
+  'repl',
+  'search',
+  'derivation',
+  'path-info',
+  'hash',
+  'why-depends',
 ]);
 
 // ── Write redirect operator types ──────────────────────────────
 
 const WRITE_REDIRECTS = new Set([
-  "great",       // >
-  "dgreat",      // >>
-  "greatand",    // >&
-  "clobber",     // >|
-  "lessgreat",   // <>
+  'great', // >
+  'dgreat', // >>
+  'greatand', // >&
+  'clobber', // >|
+  'lessgreat', // <>
 ]);
 
 // ── Public API ─────────────────────────────────────────────────
@@ -109,7 +209,7 @@ export function isDestructiveCommand(command: string): string | null {
   try {
     ast = parseBashCommand(command);
   } catch {
-    return "Blocked: failed to parse command in plan mode";
+    return 'Blocked: failed to parse command in plan mode';
   }
 
   let reason: string | null = null;
@@ -128,7 +228,7 @@ function checkCommand(node: AstCommand): string | null {
   // Check write redirects (allow /dev/null)
   if (node.suffix) {
     for (const item of node.suffix) {
-      if (item.type === "Redirect") {
+      if (item.type === 'Redirect') {
         const r = item as AstRedirect;
         if (WRITE_REDIRECTS.has(r.op.type)) {
           if (isSafeRedirectTarget(r.file)) continue;
@@ -150,12 +250,12 @@ function checkCommand(node: AstCommand): string | null {
   }
 
   // git: check subcommand
-  if (cmdName === "git" && firstArg) {
+  if (cmdName === 'git' && firstArg) {
     // "git stash" is only safe with "list"
-    if (firstArg === "stash") {
+    if (firstArg === 'stash') {
       const secondArg = getNthArg(node, 2);
-      if (secondArg !== "list") {
-        return "Blocked: git stash may modify state";
+      if (secondArg !== 'list') {
+        return 'Blocked: git stash may modify state';
       }
     } else if (!GIT_READONLY.has(firstArg)) {
       return `Blocked: git ${firstArg} may modify the repository`;
@@ -163,22 +263,22 @@ function checkCommand(node: AstCommand): string | null {
   }
 
   // nix: check subcommand + sub-subcommand
-  if (cmdName === "nix" && firstArg) {
-    if (firstArg === "flake") {
+  if (cmdName === 'nix' && firstArg) {
+    if (firstArg === 'flake') {
       const secondArg = getNthArg(node, 2);
-      const allowed = new Set(["show", "metadata", "check"]);
+      const allowed = new Set(['show', 'metadata', 'check']);
       if (!secondArg || !allowed.has(secondArg)) {
-        return `Blocked: nix flake ${secondArg ?? ""} may modify the system`;
+        return `Blocked: nix flake ${secondArg ?? ''} may modify the system`;
       }
-    } else if (firstArg === "store") {
+    } else if (firstArg === 'store') {
       const secondArg = getNthArg(node, 2);
-      const allowed = new Set(["cat", "ls", "path-info"]);
+      const allowed = new Set(['cat', 'ls', 'path-info']);
       if (!secondArg || !allowed.has(secondArg)) {
-        return `Blocked: nix store ${secondArg ?? ""} may modify the system`;
+        return `Blocked: nix store ${secondArg ?? ''} may modify the system`;
       }
-    } else if (firstArg === "derivation") {
+    } else if (firstArg === 'derivation') {
       const secondArg = getNthArg(node, 2);
-      if (secondArg && secondArg !== "show") {
+      if (secondArg && secondArg !== 'show') {
         return `Blocked: nix derivation ${secondArg} may modify the system`;
       }
     } else if (!NIX_READONLY.has(firstArg)) {
@@ -187,13 +287,13 @@ function checkCommand(node: AstCommand): string | null {
   }
 
   // curl: block if -o / -O / --output is present
-  if (cmdName === "curl") {
+  if (cmdName === 'curl') {
     if (node.suffix) {
       for (const item of node.suffix) {
-        if (item.type === "Word") {
+        if (item.type === 'Word') {
           const w = item as AstWord;
-          if (w.text === "-o" || w.text === "-O" || w.text === "--output") {
-            return "Blocked: curl output flag may write files";
+          if (w.text === '-o' || w.text === '-O' || w.text === '--output') {
+            return 'Blocked: curl output flag may write files';
           }
         }
       }
@@ -207,8 +307,8 @@ function checkCommand(node: AstCommand): string | null {
 
 /** Return true if redirect target is safe (/dev/null or numeric fd). */
 function isSafeRedirectTarget(file: AstWord): boolean {
-  if (file.text === "/dev/null") return true;
-  if (/^[0-9]+$/.test(file.text) || file.text === "-") return true;
+  if (file.text === '/dev/null') return true;
+  if (/^[0-9]+$/.test(file.text) || file.text === '-') return true;
   return false;
 }
 
@@ -216,7 +316,7 @@ function isSafeRedirectTarget(file: AstWord): boolean {
 function getFirstArg(node: AstCommand): string | undefined {
   if (!node.suffix) return undefined;
   for (const item of node.suffix) {
-    if (item.type === "Word") return (item as AstWord).text;
+    if (item.type === 'Word') return (item as AstWord).text;
   }
   return undefined;
 }
@@ -226,7 +326,7 @@ function getNthArg(node: AstCommand, n: number): string | undefined {
   if (!node.suffix) return undefined;
   let count = 0;
   for (const item of node.suffix) {
-    if (item.type === "Word") {
+    if (item.type === 'Word') {
       count++;
       if (count === n) return (item as AstWord).text;
     }

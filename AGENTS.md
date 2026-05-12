@@ -23,6 +23,7 @@ Pi package bundling extensions, themes, prompts for pi coding agent. Developed o
 Node modules managed at project root only. All extensions use shared dependencies from project `package.json`. No `package.json` in extension directories.
 
 **CRITICAL**: Never install packages automatically.
+
 - If dependency missing, prompt user to install manually at project root
 - Wait for confirmation before continuing
 
@@ -40,15 +41,15 @@ Node modules managed at project root only. All extensions use shared dependencie
 #### Filesystem isolation: tempfs directories
 
 When test code needs to read or write files, create a temporary directory with
-`mkdtempSync` and clean it up after the test.  Use a `withTempDir` helper:
+`mkdtempSync` and clean it up after the test. Use a `withTempDir` helper:
 
 ```typescript
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
 function withTempDir<T>(fn: (dir: string) => T): T {
-  const dir = mkdtempSync(join(tmpdir(), "pi-gate-"));
+  const dir = mkdtempSync(join(tmpdir(), 'pi-gate-'));
   try {
     return fn(dir);
   } finally {
@@ -56,25 +57,25 @@ function withTempDir<T>(fn: (dir: string) => T): T {
   }
 }
 
-test("load/save roundtrip", () => {
+test('load/save roundtrip', () => {
   withTempDir((dir) => {
     // ... use dir as isolated filesystem root ...
   });
 });
 ```
 
-This is the **primary** fs-isolation pattern.  It uses real `node:fs` so there
+This is the **primary** fs-isolation pattern. It uses real `node:fs` so there
 are no impedance mismatches with the code under test, and cleanup is automatic.
 
 #### Config module mocking
 
 When testing code that **consumes** a `ConfigResult` (e.g., `checkBashCommand`,
 `checkFileAccess`), do not call `loadConfig(cwd)` with temp directories and env
-var overrides.  Instead, build a fake `ConfigResult` with a helper and pass it
+var overrides. Instead, build a fake `ConfigResult` with a helper and pass it
 directly to the function under test:
 
 ```typescript
-import { type ConfigResult } from "../../../extensions/pi-gate/config.ts";
+import { type ConfigResult } from '../../../extensions/pi-gate/config.ts';
 
 function createConfigResult(overrides?: Partial<ConfigResult>): ConfigResult {
   const empty = () => ({
@@ -86,23 +87,23 @@ function createConfigResult(overrides?: Partial<ConfigResult>): ConfigResult {
     merged: { ...empty(), ...(overrides?.merged || {}) },
     global: { ...empty(), ...(overrides?.global || {}) },
     project: { ...empty(), ...(overrides?.project || {}) },
-    globalPath: "/fake/global.json",
-    projectPath: "/fake/project.json",
+    globalPath: '/fake/global.json',
+    projectPath: '/fake/project.json',
     ...overrides,
   };
 }
 
 // ... inside a test:
-const configResult = createConfigResult({ merged: { bashAllow: ["cat *"] } });
-const allowed = await checkBashCommand("cat file.txt", cwd, configResult, ctx);
+const configResult = createConfigResult({ merged: { bashAllow: ['cat *'] } });
+const allowed = await checkBashCommand('cat file.txt', cwd, configResult, ctx);
 ```
 
 - **Config module itself** (`config.test.ts`): tests that validate `loadConfig`
-  and `saveConfig` behavior should use tempfs directories (above).  They are
+  and `saveConfig` behavior should use tempfs directories (above). They are
   testing the real config module, not consuming it.
 - **Consumer modules** (`bash-guard.test.ts`, `file-access.test.ts`): craft
   `ConfigResult` objects with a helper and pass them directly to the function
-  under test.  This eliminates the need for temp directories and, critically,
+  under test. This eliminates the need for temp directories and, critically,
   for `process.env` overrides.
 
 #### Environment variable isolation
@@ -117,12 +118,12 @@ const allowed = await checkBashCommand("cat file.txt", cwd, configResult, ctx);
 
 `package.json` configures pi to discover resources from these directories:
 
-| Resource | `package.json` field | Dir |
-|----------|---------------------|-----|
+| Resource   | `package.json` field                 | Dir           |
+| ---------- | ------------------------------------ | ------------- |
 | Extensions | `pi.extensions` → `["./extensions"]` | `extensions/` |
-| Skills | `pi.skills` → `["./skills"]` | `skills/` |
-| Prompts | `pi.prompts` → `["./prompts"]` | `prompts/` |
-| Themes | `pi.themes` → `["./themes"]` | `themes/` |
+| Skills     | `pi.skills` → `["./skills"]`         | `skills/`     |
+| Prompts    | `pi.prompts` → `["./prompts"]`       | `prompts/`    |
+| Themes     | `pi.themes` → `["./themes"]`         | `themes/`     |
 
 ```
 .
@@ -144,12 +145,14 @@ const allowed = await checkBashCommand("cat file.txt", cwd, configResult, ctx);
 Pi auto-discovers TypeScript extensions in `extensions/`:
 
 **Single-file extensions** — for simple, one-module extensions:
+
 ```
 extensions/
 └── my-extension.ts         # exports default function(pi: ExtensionAPI)
 ```
 
 **Directory extensions** — for multi-file extensions:
+
 ```
 extensions/
 └── my-extension/

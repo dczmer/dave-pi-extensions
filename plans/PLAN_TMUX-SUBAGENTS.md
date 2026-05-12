@@ -34,7 +34,7 @@ Create `tmux-subagent` skill Pi uses to spawn, manage, and coordinate subagents 
 
 **File:** `~/.pi/agent/skills/tmux-subagent/SKILL.md`
 
-```markdown
+````markdown
 ---
 name: tmux-subagent
 description: Spawn and manage Pi subagents in isolated tmux sessions for parallel task execution. Use when you need to delegate work to background agents, run multiple tasks concurrently, or coordinate a team of specialized agents.
@@ -47,32 +47,39 @@ Manage Pi subagents running in isolated tmux sessions.
 ## Quick Start
 
 Spawn your first subagent:
+
 ```bash
 /skill:tmux-subagent spawn backend "Implement user authentication API"
 # Returns: backend-a7f3k (unique agent ID)
 ```
+````
 
 Spawn with specialized agent configuration:
+
 ```bash
 /skill:tmux-subagent spawn rust-expert "Review this code for safety issues"
 # Returns: rust-expert-9x2m4 (unique agent ID)
 ```
+
 (Requires `agents/rust-expert.md` file)
 
 Spawn multiple instances of the same agent type:
+
 ```bash
 /skill:tmux-subagent spawn reviewer "Review auth module"
 # Returns: reviewer-k2p9n
-/skill:tmux-subagent spawn reviewer "Review database layer"  
+/skill:tmux-subagent spawn reviewer "Review database layer"
 # Returns: reviewer-q5w8r (concurrent instance)
 ```
 
 ## Commands
 
 ### Spawn Subagent
+
 ```bash
 ./scripts/spawn.sh <agent-type> "<initial-task>" [cwd]
 ```
+
 Creates detached tmux session with unique agent ID, running Pi with the task.
 
 **Returns:** Unique agent ID (e.g., `rust-expert-a7f3k`) for referencing this specific instance.
@@ -83,12 +90,14 @@ If `agents/${AGENT_TYPE}.md` exists, its content appends to the system prompt. F
 The `<agent-type>` is the base name used to look up configuration. The returned agent ID uniquely identifies this specific instance.
 
 Example agent file (`agents/backend.md`):
+
 ```markdown
 ---
 model: claude-sonnet-4-20250514
 ---
 
 You are a backend specialist. Focus on:
+
 - API design patterns
 - Database optimization
 - Security best practices
@@ -96,12 +105,15 @@ You are a backend specialist. Focus on:
 ```
 
 ### List Active Subagents
+
 ```bash
 ./scripts/list.sh
 ```
+
 Shows all agent instances with their unique IDs, agent types, status, and working directory.
 
 Example output:
+
 ```
 AGENT ID          TYPE       STATUS     START_TIME                CWD
 rust-expert-a7f3  rust-expe  RUNNING    2024-01-15T10:30:00      /home/user/proj
@@ -110,31 +122,39 @@ reviewer-q5w8r    reviewer   RUNNING    2024-01-15T10:32:00      /home/user/proj
 ```
 
 ### Send Command to Subagent
+
 ```bash
 ./scripts/send.sh <agent-id> "<prompt>"
 ```
+
 Sends prompt to running subagent (identified by unique agent ID) via tmux key sequence.
 
 Example:
+
 ```bash
 ./scripts/send.sh reviewer-k2p9n "Focus on SQL injection vulnerabilities"
 ```
 
 ### View Logs
+
 ```bash
 ./scripts/logs.sh <agent-id> [lines]
 ```
+
 Tails subagent output (default 50 lines).
 
 ### Kill Subagent
+
 ```bash
 ./scripts/kill.sh <agent-id>
 ```
+
 Terminates specific agent instance by its unique agent ID.
 
 ## Communication Patterns
 
 Subagents write results to shared directory:
+
 ```
 ~/.local/share/pi-subagent/<name>/
 ├── output.txt      # Final result
@@ -147,6 +167,7 @@ Parent reads these files to collect results.
 ## Workflow Example
 
 1. Spawn 3 subagents for parallel work (capture their unique IDs):
+
 ```bash
 PARSER_ID=$(./scripts/spawn.sh parser "Parse CSV files in data/")
 ANALYZER_ID=$(./scripts/spawn.sh analyzer "Analyze parsed results")
@@ -155,16 +176,19 @@ echo "Spawned: $PARSER_ID, $ANALYZER_ID, $REPORTER_ID"
 ```
 
 2. Check status:
+
 ```bash
 ./scripts/list.sh
 ```
 
 3. Send mid-course correction (using unique ID):
+
 ```bash
 ./scripts/send.sh "$PARSER_ID" "Also handle JSON files"
 ```
 
 4. Spawn multiple reviewers working in parallel:
+
 ```bash
 REVIEWER1=$(./scripts/spawn.sh reviewer "Review auth module")
 REVIEWER2=$(./scripts/spawn.sh reviewer "Review database layer")
@@ -172,6 +196,7 @@ REVIEWER3=$(./scripts/spawn.sh reviewer "Review API endpoints")
 ```
 
 5. Collect results when done:
+
 ```bash
 cat ~/.local/share/pi-subagent/$PARSER_ID/output.txt
 cat ~/.local/share/pi-subagent/$REVIEWER1/output.txt
@@ -187,7 +212,8 @@ cat ~/.local/share/pi-subagent/$REVIEWER1/output.txt
 - Multiple instances of the same agent type can run concurrently (e.g., 3 reviewers)
 
 See [references/architecture.md](references/architecture.md) for protocol details.
-```
+
+````
 
 ---
 
@@ -227,19 +253,19 @@ MODEL_FLAG=""
 
 if [[ -f "$AGENT_FILE" ]]; then
     echo "Loading agent configuration: $AGENT_FILE" >&2
-    
+
     # Extract front-matter if present
     if head -1 "$AGENT_FILE" | grep -q '^---$'; then
         # Has front-matter, extract it
         FRONT_MATTER=$(sed -n '/^---$/,/^---$/p' "$AGENT_FILE" | sed '1d;$d')
-        
+
         # Check for model attribute
         MODEL=$(echo "$FRONT_MATTER" | grep -E '^model:' | sed 's/^model:[[:space:]]*//' | tr -d '"' | tr -d "'")
         if [[ -n "$MODEL" ]]; then
             MODEL_FLAG="--model $MODEL"
             echo "Using model: $MODEL" >&2
         fi
-        
+
         # Extract content after front-matter
         SYSTEM_PROMPT_APPEND=$(sed '1,/^---$/d' "$AGENT_FILE" | sed '1,/^---$/d')
     else
@@ -298,7 +324,7 @@ echo "$STATUS_JSON" > "$STATEDIR/status.json"
 
 # Output the agent ID (primary return value for scripts)
 echo "$AGENT_ID"
-```
+````
 
 ### `scripts/list.sh`
 
@@ -312,33 +338,33 @@ printf "%-18s %-12s %-10s %-25s %s\n" "==================" "============" "=====
 tmux list-sessions -F '#{session_name}' 2>/dev/null | grep '^pi-sub-' | while read -r session; do
     agent_id="${session#pi-sub-}"
     statedir="${HOME}/.local/share/pi-subagent/${agent_id}"
-    
+
     # Get agent type from status.json, fallback to parsing ID
     agent_type="$agent_id"
     if [[ -f "$statedir/status.json" ]]; then
         agent_type=$(grep -o '"agent_type": "[^"]*"' "$statedir/status.json" | cut -d'"' -f4 || echo "$agent_id")
     fi
-    
+
     # Get working directory
     cwd=$(tmux display-message -t "$session" -p '#{pane_current_path}' 2>/dev/null || echo "unknown")
-    
+
     # Check if process is still running
     if tmux list-panes -t "$session" -F '#{pane_dead}' | grep -q '0'; then
         status="RUNNING"
     else
         status="COMPLETED"
     fi
-    
+
     # Get start time if available
     start_time="unknown"
     if [[ -f "$statedir/status.json" ]]; then
         start_time=$(grep -o '"start_time": "[^"]*"' "$statedir/status.json" | cut -d'"' -f4 || echo "unknown")
     fi
-    
+
     # Truncate long values for display
     agent_type_short="${agent_type:0:12}"
     cwd_short="${cwd:0:30}"
-    
+
     printf "%-18s %-12s %-10s %-25s %s\n" "$agent_id" "$agent_type_short" "$status" "$start_time" "$cwd_short"
 done
 
@@ -462,6 +488,7 @@ model: claude-sonnet-4-20250514
 ---
 
 You are a Rust language expert specializing in:
+
 - Memory safety and ownership patterns
 - Async/await and concurrency
 - Unsafe code review
@@ -469,6 +496,7 @@ You are a Rust language expert specializing in:
 - Idiomatic Rust patterns
 
 When reviewing code:
+
 1. Identify potential safety issues first
 2. Suggest more idiomatic alternatives
 3. Explain trade-offs clearly
@@ -476,9 +504,9 @@ When reviewing code:
 
 ### Front-matter Attributes
 
-| Attribute | Purpose | Example |
-|-----------|---------|---------|
-| `model` | Override default model | `model: gpt-4o` |
+| Attribute | Purpose                | Example         |
+| --------- | ---------------------- | --------------- |
+| `model`   | Override default model | `model: gpt-4o` |
 
 Content after front-matter appends to system prompt.
 
@@ -494,12 +522,14 @@ Content after front-matter appends to system prompt.
 ## Agent Identity System
 
 Each subagent instance receives a unique **Agent ID**:
+
 - Format: `<agent-type>-<random>` (e.g., `rust-expert-a7f3k`)
 - Generated at spawn time using 5-char random suffix
 - All operations reference agents by their unique Agent ID
 - Multiple instances of same agent type can run concurrently
 
 Benefits:
+
 - No naming collisions when running parallel instances
 - Caller controls lifecycle of each specific instance
 - Easy to track and manage concurrent workers
@@ -507,6 +537,7 @@ Benefits:
 ## Session Naming
 
 All subagent tmux sessions prefixed with `pi-sub-<agent-id>`:
+
 - Session: `pi-sub-rust-expert-a7f3k`
 - Avoids conflicts with user tmux sessions
 - Enables discovery via `tmux list-sessions | grep pi-sub-`
@@ -514,6 +545,7 @@ All subagent tmux sessions prefixed with `pi-sub-<agent-id>`:
 ## State Management
 
 State stored in `~/.local/share/pi-subagent/<agent-id>/`:
+
 - `status.json`: Metadata including agent_type, agent_id, model, timing, PID
 - `output.txt`: Captured stdout/stderr
 - `progress.txt`: Optional incremental updates
@@ -522,6 +554,7 @@ State stored in `~/.local/share/pi-subagent/<agent-id>/`:
 ## Communication Protocol
 
 Subagents are stateless from parent perspective. Parent:
+
 1. Spawns with agent type and initial task via spawn.sh
 2. Receives unique Agent ID as return value
 3. Polls output.txt for results using Agent ID
@@ -533,11 +566,13 @@ No direct IPC—filesystem-based coordination.
 ## Agent Configuration System
 
 Agent files in `agents/<agent-type>.md` provide:
+
 1. **Model selection**: Override default model via front-matter
 2. **System prompt extension**: Append specialized instructions
 3. **Type-based loading**: All instances of same type share config
 
 Loading precedence:
+
 1. Spawn command receives agent type (e.g., `spawn rust-expert ...`)
 2. Script generates unique Agent ID: `rust-expert-a7f3k`
 3. Script checks for `agents/rust-expert.md`
@@ -616,6 +651,7 @@ echo "Concurrent reviewers: $ID1, $ID2"
 ```
 
 Pi will:
+
 1. Match description to `tmux-subagent` skill
 2. Load SKILL.md instructions
 3. Execute appropriate script via bash tool

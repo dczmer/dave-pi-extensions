@@ -1,16 +1,16 @@
-import js from "@eslint/js";
-import tseslint from "typescript-eslint";
+import js from '@eslint/js';
+import tseslint from 'typescript-eslint';
 
 export default tseslint.config(
   js.configs.recommended,
   tseslint.configs.recommended,
   {
-    files: ["**/*.ts"],
+    files: ['**/*.ts'],
     rules: {
-      "@typescript-eslint/no-explicit-any": "off",
+      '@typescript-eslint/no-explicit-any': 'off',
     },
   },
   {
-    ignores: ["**/node_modules/**", "**/*.d.ts"],
-  }
+    ignores: ['**/node_modules/**', '**/*.d.ts'],
+  },
 );

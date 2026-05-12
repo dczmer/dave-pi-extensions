@@ -85,34 +85,34 @@
  * that sets PI_CODING_AGENT_DIR to a temp dir with merged settings and symlinks auth.
  */
 
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
-import { readFile } from "node:fs/promises";
-import { existsSync } from "node:fs";
-import { join } from "node:path";
+import type { ExtensionAPI } from '@mariozechner/pi-coding-agent';
+import { readFile } from 'node:fs/promises';
+import { existsSync } from 'node:fs';
+import { join } from 'node:path';
 
 export default function (pi: ExtensionAPI) {
   const baseDir = process.env.PI_CUSTOM_DIR;
   if (!baseDir) return;
 
-  pi.on("resources_discover", async (_event, _ctx) => ({
-    skillPaths: existsSync(join(baseDir, "skills")) ? [join(baseDir, "skills")] : [],
-    promptPaths: existsSync(join(baseDir, "prompts")) ? [join(baseDir, "prompts")] : [],
-    themePaths: existsSync(join(baseDir, "themes")) ? [join(baseDir, "themes")] : [],
+  pi.on('resources_discover', async (_event, _ctx) => ({
+    skillPaths: existsSync(join(baseDir, 'skills')) ? [join(baseDir, 'skills')] : [],
+    promptPaths: existsSync(join(baseDir, 'prompts')) ? [join(baseDir, 'prompts')] : [],
+    themePaths: existsSync(join(baseDir, 'themes')) ? [join(baseDir, 'themes')] : [],
   }));
 
-  pi.on("before_agent_start", async (event, _ctx) => {
+  pi.on('before_agent_start', async (event, _ctx) => {
     const result: { systemPrompt?: string; message?: { customType: string; content: string; display: boolean } } = {};
 
-    const appendSystem = join(baseDir, "APPEND_SYSTEM.md");
+    const appendSystem = join(baseDir, 'APPEND_SYSTEM.md');
     if (existsSync(appendSystem)) {
-      result.systemPrompt = event.systemPrompt + "\n\n" + await readFile(appendSystem, "utf-8");
+      result.systemPrompt = event.systemPrompt + '\n\n' + (await readFile(appendSystem, 'utf-8'));
     }
 
-    const agents = join(baseDir, "AGENTS.md");
+    const agents = join(baseDir, 'AGENTS.md');
     if (existsSync(agents)) {
       result.message = {
-        customType: "custom-agents",
-        content: await readFile(agents, "utf-8"),
+        customType: 'custom-agents',
+        content: await readFile(agents, 'utf-8'),
         display: false,
       };
     }

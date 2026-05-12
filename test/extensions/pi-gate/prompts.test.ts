@@ -1,11 +1,11 @@
-import { strictEqual } from "node:assert";
-import { test } from "node:test";
+import { strictEqual } from 'node:assert';
+import { test } from 'node:test';
 import {
   promptAllowDeny,
   promptPattern,
   confirmAddToConfig,
   confirmAddToConfigWithTarget,
-} from "../../../extensions/pi-gate/prompts.ts";
+} from '../../../extensions/pi-gate/prompts.ts';
 
 function createMockCtx(ui: {
   confirm?: (title: string, message: string) => Promise<boolean>;
@@ -16,118 +16,118 @@ function createMockCtx(ui: {
   return { ui } as unknown as Parameters<typeof promptAllowDeny>[1];
 }
 
-test("promptAllowDeny returns true when user selects Allow", async () => {
+test('promptAllowDeny returns true when user selects Allow', async () => {
   const ctx = createMockCtx({
     confirm: () => Promise.resolve(true),
   });
-  const result = await promptAllowDeny("Allow access to /tmp?", ctx);
+  const result = await promptAllowDeny('Allow access to /tmp?', ctx);
   strictEqual(result, true);
 });
 
-test("promptAllowDeny returns false when user selects Deny", async () => {
+test('promptAllowDeny returns false when user selects Deny', async () => {
   const ctx = createMockCtx({
     confirm: () => Promise.resolve(false),
   });
-  const result = await promptAllowDeny("Allow access to /tmp?", ctx);
+  const result = await promptAllowDeny('Allow access to /tmp?', ctx);
   strictEqual(result, false);
 });
 
-test("promptPattern returns edited value", async () => {
+test('promptPattern returns edited value', async () => {
   const ctx = createMockCtx({
-    editor: () => Promise.resolve("/tmp/*"),
+    editor: () => Promise.resolve('/tmp/*'),
   });
-  const result = await promptPattern("/tmp/test.txt", "External path pattern", ctx);
-  strictEqual(result, "/tmp/*");
+  const result = await promptPattern('/tmp/test.txt', 'External path pattern', ctx);
+  strictEqual(result, '/tmp/*');
 });
 
-test("promptPattern returns null when input cleared", async () => {
+test('promptPattern returns null when input cleared', async () => {
   const ctx = createMockCtx({
-    editor: () => Promise.resolve(""),
+    editor: () => Promise.resolve(''),
   });
-  const result = await promptPattern("/tmp/test.txt", "External path pattern", ctx);
+  const result = await promptPattern('/tmp/test.txt', 'External path pattern', ctx);
   strictEqual(result, null);
 });
 
-test("promptPattern returns null on cancel", async () => {
+test('promptPattern returns null on cancel', async () => {
   const ctx = createMockCtx({
     editor: () => Promise.resolve(undefined),
   });
-  const result = await promptPattern("/tmp/test.txt", "External path pattern", ctx);
+  const result = await promptPattern('/tmp/test.txt', 'External path pattern', ctx);
   strictEqual(result, null);
 });
 
-test("confirmAddToConfig returns true when user selects Project", async () => {
+test('confirmAddToConfig returns true when user selects Project', async () => {
   const ctx = createMockCtx({
-    select: () => Promise.resolve("Project"),
+    select: () => Promise.resolve('Project'),
   });
-  const result = await confirmAddToConfig("bashAllow", ctx);
+  const result = await confirmAddToConfig('bashAllow', ctx);
   strictEqual(result, true);
 });
 
-test("confirmAddToConfig returns true when user selects Global", async () => {
+test('confirmAddToConfig returns true when user selects Global', async () => {
   const ctx = createMockCtx({
-    select: () => Promise.resolve("Global"),
+    select: () => Promise.resolve('Global'),
   });
-  const result = await confirmAddToConfig("bashAllow", ctx);
+  const result = await confirmAddToConfig('bashAllow', ctx);
   strictEqual(result, true);
 });
 
-test("confirmAddToConfig returns false when user selects No", async () => {
+test('confirmAddToConfig returns false when user selects No', async () => {
   const ctx = createMockCtx({
-    select: () => Promise.resolve("No"),
+    select: () => Promise.resolve('No'),
   });
-  const result = await confirmAddToConfig("bashAllow", ctx);
+  const result = await confirmAddToConfig('bashAllow', ctx);
   strictEqual(result, false);
 });
 
-test("confirmAddToConfigWithTarget returns confirmed true and project target", async () => {
+test('confirmAddToConfigWithTarget returns confirmed true and project target', async () => {
   const ctx = createMockCtx({
-    select: () => Promise.resolve("Project"),
+    select: () => Promise.resolve('Project'),
   });
-  const result = await confirmAddToConfigWithTarget("bashAllow", ctx);
+  const result = await confirmAddToConfigWithTarget('bashAllow', ctx);
   strictEqual(result.confirmed, true);
-  strictEqual(result.target, "project");
+  strictEqual(result.target, 'project');
 });
 
-test("confirmAddToConfigWithTarget returns confirmed true and global target", async () => {
+test('confirmAddToConfigWithTarget returns confirmed true and global target', async () => {
   const ctx = createMockCtx({
-    select: () => Promise.resolve("Global"),
+    select: () => Promise.resolve('Global'),
   });
-  const result = await confirmAddToConfigWithTarget("bashAllow", ctx);
+  const result = await confirmAddToConfigWithTarget('bashAllow', ctx);
   strictEqual(result.confirmed, true);
-  strictEqual(result.target, "global");
+  strictEqual(result.target, 'global');
 });
 
-test("confirmAddToConfigWithTarget returns confirmed false when user selects No", async () => {
+test('confirmAddToConfigWithTarget returns confirmed false when user selects No', async () => {
   const ctx = createMockCtx({
-    select: () => Promise.resolve("No"),
+    select: () => Promise.resolve('No'),
   });
-  const result = await confirmAddToConfigWithTarget("bashAllow", ctx);
+  const result = await confirmAddToConfigWithTarget('bashAllow', ctx);
   strictEqual(result.confirmed, false);
-  strictEqual(result.target, "project"); // default fallback
+  strictEqual(result.target, 'project'); // default fallback
 });
 
-test("confirmAddToConfigWithTarget returns confirmed false when select returns undefined (cancel)", async () => {
+test('confirmAddToConfigWithTarget returns confirmed false when select returns undefined (cancel)', async () => {
   const ctx = createMockCtx({
     select: () => Promise.resolve(undefined),
   });
-  const result = await confirmAddToConfigWithTarget("bashAllow", ctx);
+  const result = await confirmAddToConfigWithTarget('bashAllow', ctx);
   strictEqual(result.confirmed, false);
-  strictEqual(result.target, "project");
+  strictEqual(result.target, 'project');
 });
 
-test("promptPattern trims whitespace from input", async () => {
+test('promptPattern trims whitespace from input', async () => {
   const ctx = createMockCtx({
-    editor: () => Promise.resolve("  /tmp/*  "),
+    editor: () => Promise.resolve('  /tmp/*  '),
   });
-  const result = await promptPattern("/tmp/test.txt", "External path pattern", ctx);
-  strictEqual(result, "/tmp/*");
+  const result = await promptPattern('/tmp/test.txt', 'External path pattern', ctx);
+  strictEqual(result, '/tmp/*');
 });
 
-test("promptPattern empty string after trim returns null", async () => {
+test('promptPattern empty string after trim returns null', async () => {
   const ctx = createMockCtx({
-    editor: () => Promise.resolve("   "),
+    editor: () => Promise.resolve('   '),
   });
-  const result = await promptPattern("/tmp/test.txt", "External path pattern", ctx);
+  const result = await promptPattern('/tmp/test.txt', 'External path pattern', ctx);
   strictEqual(result, null);
 });

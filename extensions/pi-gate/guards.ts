@@ -7,31 +7,31 @@
  * @param cwd - Current working directory for relative resolution.
  * @returns A clean absolute path with no redundant segments.
  */
-import { homedir } from "node:os";
+import { homedir } from 'node:os';
 
 export function normalizePath(filePath: string, cwd: string): string {
-  if (filePath.startsWith("~")) {
-    const home = homedir() || "/";
+  if (filePath.startsWith('~')) {
+    const home = homedir() || '/';
     filePath = home + filePath.slice(1);
   }
 
-  if (!filePath.startsWith("/")) {
-    filePath = cwd + "/" + filePath;
+  if (!filePath.startsWith('/')) {
+    filePath = cwd + '/' + filePath;
   }
 
-  const parts = filePath.split("/");
+  const parts = filePath.split('/');
   const result: string[] = [];
 
   for (const part of parts) {
-    if (part === "" || part === ".") continue;
-    if (part === "..") {
+    if (part === '' || part === '.') continue;
+    if (part === '..') {
       result.pop();
     } else {
       result.push(part);
     }
   }
 
-  return "/" + result.join("/");
+  return '/' + result.join('/');
 }
 
 /**
@@ -41,16 +41,13 @@ export function normalizePath(filePath: string, cwd: string): string {
  * @param cwd - Normalized project root.
  * @returns `"project"` if the path is under `cwd`, `"external"` otherwise.
  */
-export function classifyPath(
-  filePath: string,
-  cwd: string,
-): "project" | "external" {
+export function classifyPath(filePath: string, cwd: string): 'project' | 'external' {
   const normalized = normalizePath(filePath, cwd);
   const normalizedCwd = normalizePath(cwd, cwd);
 
-  if (normalized === normalizedCwd) return "project";
-  if (normalized.startsWith(normalizedCwd + "/")) return "project";
-  return "external";
+  if (normalized === normalizedCwd) return 'project';
+  if (normalized.startsWith(normalizedCwd + '/')) return 'project';
+  return 'external';
 }
 
 /**
@@ -92,7 +89,7 @@ export function extractPathsFromCommand(command: string): string[] {
     if (char === '"') {
       let j = i + 1;
       while (j < command.length && command[j] !== '"') {
-        if (command[j] === "\\") {
+        if (command[j] === '\\') {
           j += 2;
         } else {
           j++;
@@ -104,10 +101,10 @@ export function extractPathsFromCommand(command: string): string[] {
     }
 
     // Handle ANSI-C quoted strings $'...'
-    if (char === "$" && command[i + 1] === "'") {
+    if (char === '$' && command[i + 1] === "'") {
       let j = i + 2;
       while (j < command.length && command[j] !== "'") {
-        if (command[j] === "\\") {
+        if (command[j] === '\\') {
           j += 2;
         } else {
           j++;
@@ -119,13 +116,13 @@ export function extractPathsFromCommand(command: string): string[] {
     }
 
     // Handle command substitution $()
-    if (char === "$" && command[i + 1] === "(") {
+    if (char === '$' && command[i + 1] === '(') {
       let depth = 1;
       let j = i + 2;
       while (j < command.length && depth > 0) {
-        if (command[j] === "(" && command[j - 1] === "$") {
+        if (command[j] === '(' && command[j - 1] === '$') {
           depth++;
-        } else if (command[j] === ")") {
+        } else if (command[j] === ')') {
           depth--;
         }
         j++;
@@ -136,10 +133,10 @@ export function extractPathsFromCommand(command: string): string[] {
     }
 
     // Handle backtick command substitution ``
-    if (char === "`") {
+    if (char === '`') {
       let j = i + 1;
-      while (j < command.length && command[j] !== "`") {
-        if (command[j] === "\\") {
+      while (j < command.length && command[j] !== '`') {
+        if (command[j] === '\\') {
           j += 2;
         } else {
           j++;
@@ -151,16 +148,16 @@ export function extractPathsFromCommand(command: string): string[] {
     }
 
     // Handle heredocs - skip them entirely
-    if (char === "<" && command[i + 1] === "<") {
+    if (char === '<' && command[i + 1] === '<') {
       let j = i + 2;
-      if (j < command.length && command[j] === "-") {
+      if (j < command.length && command[j] === '-') {
         j++;
       }
-      while (j < command.length && /\s/.test(command[j]!) && command[j]! !== "\n") {
+      while (j < command.length && /\s/.test(command[j]!) && command[j]! !== '\n') {
         j++;
       }
       // Parse delimiter
-      let delimiter = "";
+      let delimiter = '';
       if (j < command.length && command[j] === "'") {
         j++;
         while (j < command.length && command[j] !== "'") {
@@ -171,8 +168,8 @@ export function extractPathsFromCommand(command: string): string[] {
       } else if (j < command.length && command[j] === '"') {
         j++;
         while (j < command.length && command[j] !== '"') {
-          if (command[j] === "\\") {
-            delimiter += command[j + 1] || "";
+          if (command[j] === '\\') {
+            delimiter += command[j + 1] || '';
             j += 2;
           } else {
             delimiter += command[j];
@@ -191,15 +188,15 @@ export function extractPathsFromCommand(command: string): string[] {
       i = j;
       // Skip heredoc body
       while (i < command.length) {
-        const atLineStart = i === 0 || command[i - 1] === "\n";
+        const atLineStart = i === 0 || command[i - 1] === '\n';
         if (atLineStart) {
           let k = i;
-          while (k < command.length && command[k] === "\t") {
+          while (k < command.length && command[k] === '\t') {
             k++;
           }
           if (command.slice(k, k + delimiter.length) === delimiter) {
             const afterDelimiter = k + delimiter.length;
-            if (afterDelimiter >= command.length || /\s/.test(command[afterDelimiter] || "")) {
+            if (afterDelimiter >= command.length || /\s/.test(command[afterDelimiter] || '')) {
               i = afterDelimiter;
               break;
             }
@@ -211,13 +208,13 @@ export function extractPathsFromCommand(command: string): string[] {
     }
 
     // Handle process substitution <() >()
-    if ((char === "<" || char === ">") && command[i + 1] === "(") {
+    if ((char === '<' || char === '>') && command[i + 1] === '(') {
       let depth = 1;
       let j = i + 2;
       while (j < command.length && depth > 0) {
-        if (command[j] === "(") {
+        if (command[j] === '(') {
           depth++;
-        } else if (command[j] === ")") {
+        } else if (command[j] === ')') {
           depth--;
         }
         j++;
@@ -250,32 +247,17 @@ export function extractPathsFromCommand(command: string): string[] {
   if (tokens.length === 0) return [];
 
   const args = tokens.slice(1);
-  const operators = new Set([
-    "|",
-    "||",
-    "&",
-    "&&",
-    ";",
-    "(",
-    ")",
-    "{",
-    "}",
-    ">",
-    ">>",
-    "<",
-    "<<",
-    "<<-",
-  ]);
+  const operators = new Set(['|', '||', '&', '&&', ';', '(', ')', '{', '}', '>', '>>', '<', '<<', '<<-']);
 
   for (const token of args) {
     // Skip options
-    if (token.startsWith("-")) continue;
+    if (token.startsWith('-')) continue;
     // Skip operators
     if (operators.has(token)) continue;
     // Skip quoted strings (these are literals, not paths to check)
     if (token.startsWith("'") || token.startsWith('"') || token.startsWith("$'")) continue;
     // Skip command substitutions and process substitutions
-    if (token.startsWith("$(") || token.startsWith("`") || token.startsWith("<(") || token.startsWith(">(")) continue;
+    if (token.startsWith('$(') || token.startsWith('`') || token.startsWith('<(') || token.startsWith('>(')) continue;
     // This might be a path
     paths.push(token);
   }

@@ -16,13 +16,10 @@ export function matchesGlob(value: string, pattern: string): boolean {
   let match = 0;
 
   while (v < value.length) {
-    if (
-      p < pattern.length &&
-      (pattern[p] === "?" || pattern[p] === value[v])
-    ) {
+    if (p < pattern.length && (pattern[p] === '?' || pattern[p] === value[v])) {
       v++;
       p++;
-    } else if (p < pattern.length && pattern[p] === "*") {
+    } else if (p < pattern.length && pattern[p] === '*') {
       starIdx = p;
       match = v;
       p++;
@@ -35,7 +32,7 @@ export function matchesGlob(value: string, pattern: string): boolean {
     }
   }
 
-  while (p < pattern.length && pattern[p] === "*") {
+  while (p < pattern.length && pattern[p] === '*') {
     p++;
   }
 

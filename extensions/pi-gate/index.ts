@@ -1,7 +1,7 @@
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
-import { loadConfig, type ConfigResult } from "./config.ts";
-import { checkBashCommand } from "./bash-guard.ts";
-import { checkFileAccess } from "./file-access.ts";
+import type { ExtensionAPI } from '@mariozechner/pi-coding-agent';
+import { loadConfig, type ConfigResult } from './config.ts';
+import { checkBashCommand } from './bash-guard.ts';
+import { checkFileAccess } from './file-access.ts';
 
 /**
  * pi-gate extension: permissive-by-default file & bash access gate.
@@ -12,28 +12,28 @@ import { checkFileAccess } from "./file-access.ts";
  * commands require explicit user approval during the session.
  */
 export default function (pi: ExtensionAPI) {
-  pi.on("tool_call", async (event, ctx) => {
+  pi.on('tool_call', async (event, ctx) => {
     const configResult: ConfigResult = loadConfig(ctx.cwd);
 
-    if (event.toolName === "bash") {
+    if (event.toolName === 'bash') {
       const command = (event.input as { command?: string }).command;
       if (!command) return;
 
       const allowed = await checkBashCommand(command, ctx.cwd, configResult, ctx);
       if (!allowed) {
-        return { block: true, reason: "Blocked by pi-gate" };
+        return { block: true, reason: 'Blocked by pi-gate' };
       }
       return;
     }
 
-    const fileTools = ["read", "write", "edit", "grep", "find"];
+    const fileTools = ['read', 'write', 'edit', 'grep', 'find'];
     if (fileTools.includes(event.toolName)) {
       const path = (event.input as { path?: string }).path;
       if (!path) return;
 
       const allowed = await checkFileAccess(path, ctx.cwd, configResult, ctx);
       if (!allowed) {
-        return { block: true, reason: "Blocked by pi-gate" };
+        return { block: true, reason: 'Blocked by pi-gate' };
       }
       return;
     }

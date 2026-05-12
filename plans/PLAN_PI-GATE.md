@@ -41,9 +41,9 @@ extensions/pi-gate/
 
 ```typescript
 interface PiGateConfig {
-  bashAllow: string[];      // Glob patterns for allowed bash commands
-  externalAllow: string[];  // Glob patterns for allowed external paths
-  projectDeny: string[];    // Glob patterns for blocked project paths
+  bashAllow: string[]; // Glob patterns for allowed bash commands
+  externalAllow: string[]; // Glob patterns for allowed external paths
+  projectDeny: string[]; // Glob patterns for blocked project paths
 }
 
 function loadConfig(cwd: string): PiGateConfig;
@@ -59,8 +59,8 @@ function saveConfig(cwd: string, config: PiGateConfig): void;
 
 ```typescript
 interface SessionState {
-  approvedExternals: Set<string>;     // Absolute paths approved this session
-  approvedBashPatterns: Set<string>;  // Glob patterns approved this session
+  approvedExternals: Set<string>; // Absolute paths approved this session
+  approvedBashPatterns: Set<string>; // Glob patterns approved this session
 }
 
 function getSessionState(): SessionState;
@@ -77,8 +77,8 @@ function isBashPatternApproved(command: string): boolean;
 
 ```typescript
 function classifyPath(filePath: string, cwd: string): 'project' | 'external';
-function normalizePath(filePath: string): string;  // Expand ~, resolve relative
-function extractPathsFromCommand(command: string): string[];  // Simple tokenizer
+function normalizePath(filePath: string): string; // Expand ~, resolve relative
+function extractPathsFromCommand(command: string): string[]; // Simple tokenizer
 ```
 
 - Determine if path is inside `cwd` (project) or outside (external)
@@ -101,29 +101,25 @@ function matchesAnyGlob(value: string, patterns: string[]): boolean;
 ```typescript
 async function promptAllowDeny(message: string, ctx: ExtensionContext): Promise<boolean>;
 
-async function promptPattern(
-  suggestion: string,
-  description: string,
-  ctx: ExtensionContext
-): Promise<string | null>;
+async function promptPattern(suggestion: string, description: string, ctx: ExtensionContext): Promise<string | null>;
 
 type ConfigSection = 'bashAllow' | 'externalAllow' | 'projectDeny';
-async function confirmAddToConfig(
-  section: ConfigSection,
-  ctx: ExtensionContext
-): Promise<boolean>;
+async function confirmAddToConfig(section: ConfigSection, ctx: ExtensionContext): Promise<boolean>;
 ```
 
 **Control flow for `promptAllowDeny`:**
+
 1. Display `ctx.ui.confirm("pi-gate", message)`
 2. Return boolean result
 
 **Control flow for `promptPattern`:**
+
 1. Display `ctx.ui.input("pi-gate", suggestion)` with description as label
 2. On submit: if input trimmed to empty → return `null`; else → return trimmed
 3. On cancel → return `null`
 
 **Control flow for `confirmAddToConfig`:**
+
 1. Display `ctx.ui.confirm("pi-gate", 'Add to pi-gate.json -> "${section}"?')`
 2. Return boolean result
 
@@ -141,43 +137,36 @@ pi.on("tool_call", async (event, ctx) => {
 
 ```typescript
 async function checkFileAccess(
-  filePath: string, 
-  cwd: string, 
+  filePath: string,
+  cwd: string,
   config: PiGateConfig,
-  ctx: ExtensionContext
+  ctx: ExtensionContext,
 ): Promise<boolean> {
   const normalized = normalizePath(filePath);
   const classification = classifyPath(normalized, cwd);
-  
+
   if (classification === 'project') {
     // Blacklist check
     if (matchesAnyGlob(normalized, config.projectDeny)) {
-      ctx.ui.notify(`Blocked: ${filePath} matches projectDeny pattern`, "warning");
+      ctx.ui.notify(`Blocked: ${filePath} matches projectDeny pattern`, 'warning');
       return false;
     }
     return true;
   } else {
     // External whitelist check
     if (isExternalApproved(normalized)) return true;
-    
+
     if (matchesAnyGlob(normalized, config.externalAllow)) return true;
-    
+
     // Prompt user
-    const allowed = await promptAllowDeny(
-      `Allow access to external file: ${filePath}?`, 
-      ctx
-    );
+    const allowed = await promptAllowDeny(`Allow access to external file: ${filePath}?`, ctx);
     if (!allowed) return false;
-    
+
     approveExternal(normalized);
-    
+
     // Ask to persist pattern
     if (await confirmAddToConfig('externalAllow', ctx)) {
-      const pattern = await promptPattern(
-        filePath, 
-        'External path pattern',
-        ctx
-      );
+      const pattern = await promptPattern(filePath, 'External path pattern', ctx);
       if (pattern) {
         config.externalAllow.push(pattern);
         saveConfig(cwd, config);
@@ -189,6 +178,7 @@ async function checkFileAccess(
 ```
 
 **Control flow:**
+
 1. Normalize path (expand `~`, resolve relative)
 2. Classify as `'project'` or `'external'`
 3. If project: check against `projectDeny` globs → block if match, else allow
@@ -204,49 +194,46 @@ async function checkFileAccess(
 
 ```typescript
 async function checkBashCommand(
-  command: string, 
-  cwd: string, 
+  command: string,
+  cwd: string,
   config: PiGateConfig,
-  ctx: ExtensionContext
+  ctx: ExtensionContext,
 ): Promise<boolean> {
   const sessionState = getSessionState();
-  
+
   // Step 1: Check command pattern
   const allPatterns = [...config.bashAllow, ...sessionState.approvedBashPatterns];
-  let matchedPattern = allPatterns.find(p => matchesGlob(command, p));
-  
+  let matchedPattern = allPatterns.find((p) => matchesGlob(command, p));
+
   if (!matchedPattern) {
-    const allowed = await promptAllowDeny(
-      `Allow bash command: ${command}?`, 
-      ctx
-    );
+    const allowed = await promptAllowDeny(`Allow bash command: ${command}?`, ctx);
     if (!allowed) return false;
-    
+
     const pattern = await promptPattern(command, 'Command pattern', ctx);
     if (!pattern) return false;
-    
+
     approveBashPattern(pattern);
     matchedPattern = pattern;
-    
+
     if (await confirmAddToConfig('bashAllow', ctx)) {
       config.bashAllow.push(pattern);
       saveConfig(cwd, config);
     }
-    
+
     // Re-check with updated patterns
     return checkBashCommand(command, cwd, config, ctx);
   }
-  
+
   // Step 2: Extract and check file arguments
   const paths = extractPathsFromCommand(command);
   for (const filePath of paths) {
     const allowed = await checkFileAccess(filePath, cwd, config, ctx);
     if (!allowed) {
-      ctx.ui.notify(`Blocked: file ${filePath} in command denied`, "warning");
+      ctx.ui.notify(`Blocked: file ${filePath} in command denied`, 'warning');
       return false;
     }
   }
-  
+
   return true;
 }
 ```
@@ -254,6 +241,7 @@ async function checkBashCommand(
 **Control flow:**
 
 **Step 1 — Command Pattern Check:**
+
 1. Combine `bashAllow` + `approvedBashPatterns`
 2. Find first matching glob pattern for command
 3. If match found → proceed to Step 2
@@ -266,6 +254,7 @@ async function checkBashCommand(
 10. **Recurse**: restart from Step 1 with updated patterns
 
 **Step 2 — File Arguments Check:**
+
 1. Extract potential file paths from command
 2. For each path → call `checkFileAccess(path, cwd, config, ctx)`
 3. If any file access denied → log, return `false`
@@ -274,32 +263,32 @@ async function checkBashCommand(
 ## 4. Entry Point (`index.ts`)
 
 ```typescript
-import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI, ExtensionContext } from '@mariozechner/pi-coding-agent';
 
 export default function (pi: ExtensionAPI) {
-  pi.on("tool_call", async (event, ctx) => {
+  pi.on('tool_call', async (event, ctx) => {
     const config = loadConfig(ctx.cwd);
 
-    if (event.toolName === "bash") {
+    if (event.toolName === 'bash') {
       const command = event.input.command as string;
       if (!command) return; // pass through
 
       const allowed = await checkBashCommand(command, ctx.cwd, config, ctx);
       if (!allowed) {
-        return { block: true, reason: "Blocked by pi-gate" };
+        return { block: true, reason: 'Blocked by pi-gate' };
       }
       return; // pass through
     }
 
     // File-access tools: read, write, edit, grep, find
-    const fileTools = ["read", "write", "edit", "grep", "find"];
+    const fileTools = ['read', 'write', 'edit', 'grep', 'find'];
     if (fileTools.includes(event.toolName)) {
       const path = event.input.path as string | undefined;
       if (!path) return; // pass through
 
       const allowed = await checkFileAccess(path, ctx.cwd, config, ctx);
       if (!allowed) {
-        return { block: true, reason: "Blocked by pi-gate" };
+        return { block: true, reason: 'Blocked by pi-gate' };
       }
       return; // pass through
     }
@@ -320,6 +309,7 @@ and `@std/path` for path utilities.
 Pure function, no dependencies. Most straightforward to start with.
 
 **Tests to write:**
+
 - Exact string match (`ls` matches `ls`)
 - Single wildcard `*` matches any chars
 - Wildcard at end only (`cat *` matches `cat foo.txt`)
@@ -344,6 +334,7 @@ Pure function, no dependencies. Most straightforward to start with.
 Path classification and command parsing.
 
 **Tests to write:**
+
 - Project file classification (path under cwd)
 - External file classification (path outside cwd)
 - Tilde expansion to home directory
@@ -365,6 +356,7 @@ Path classification and command parsing.
 In-memory state container.
 
 **Tests to write:**
+
 - Approve and check external path
 - Approve and check bash pattern
 - Multiple externals approved
@@ -382,6 +374,7 @@ In-memory state container.
 JSON load/save with strict validation.
 
 **Tests to write:**
+
 - Load valid config file with all sections
 - Load missing config returns empty defaults
 - Save and reload roundtrip preserves data
@@ -404,6 +397,7 @@ User interaction wrappers. Use Deno mocking for ctx.ui methods.
 Requires hooks to inject test double for `ctx`.
 
 **Tests to write:**
+
 - `promptAllowDeny` returns true when user selects Allow
 - `promptAllowDeny` returns false when user selects Deny
 - `promptPattern` returns edited value
@@ -421,6 +415,7 @@ isExternalApproved, promptAllowDeny, approveExternal, confirmAddToConfig,
 promptPattern, saveConfig.
 
 **Tests to write:**
+
 - Project file allowed with empty deny list
 - Project file allowed when not matching deny pattern
 - External file allowed when in config externalAllow
@@ -444,6 +439,7 @@ approveBashPattern, confirmAddToConfig, saveConfig, extractPathsFromCommand,
 checkFileAccess.
 
 **Tests to write:**
+
 - Command allowed by config bashAllow pattern
 - Command allowed by session approved pattern
 - Command with project files all allowed
@@ -466,14 +462,14 @@ Update `deno.jsonc` imports and tasks:
 ```jsonc
 {
   "tasks": {
-    "test": "deno test --allow-read --allow-write --allow-env extensions/pi-gate/tests/"
+    "test": "deno test --allow-read --allow-write --allow-env extensions/pi-gate/tests/",
   },
   "imports": {
     "@std/assert": "jsr:@std/assert@1",
     "@std/testing": "jsr:@std/testing@1",
     "@std/path": "jsr:@std/path@1",
-    "@std/fs": "jsr:@std/fs@1"
-  }
+    "@std/fs": "jsr:@std/fs@1",
+  },
 }
 ```
 
@@ -484,10 +480,12 @@ Update `deno.jsonc` imports and tasks:
 ## 7. Dependencies
 
 **Runtime (no external deps):**
+
 - `@mariozechner/pi-coding-agent` — types only (provided by pi runtime)
 - Deno standard library (APIs, not imports) — `Deno.env`, `Deno.cwd`, `Deno.realPath`
 
 **Test only:**
+
 - `@std/assert` — assertions
 - `@std/testing/mock` — `spy`, `stub`
 - `@std/path` — path utilities for test fixtures
