@@ -8,22 +8,19 @@ import { checkFileAccess } from '../../../extensions/pi-gate/file-access.ts';
 import { approveExternal, resetSessionState } from '../../../extensions/pi-gate/session.ts';
 
 function createMockCtx() {
-  const confirmQueue: boolean[] = [];
   const editorQueue: (string | null)[] = [];
   const selectQueue: (string | null)[] = [];
   const notifications: Array<{ message: string; level: string }> = [];
 
   const ctx = {
     ui: {
-      confirm: () => Promise.resolve(confirmQueue.shift() ?? false),
-      editor: () => Promise.resolve(editorQueue.shift() ?? null),
+      editor: () => Promise.resolve(editorQueue.shift() ?? undefined),
       select: <T extends string>() => Promise.resolve((selectQueue.shift() ?? 'project') as T),
       notify: (message: string, level: string) => {
         notifications.push({ message, level });
       },
     },
     _notifications: notifications,
-    queueConfirm: (v: boolean) => confirmQueue.push(v),
     queueEditor: (v: string | null) => editorQueue.push(v),
     queueSelect: (v: string | null) => selectQueue.push(v),
   };
@@ -102,7 +99,6 @@ test('external file approved by user and persisted to project config', async () 
 
     const configResult = createConfigResult({ projectPath, globalPath });
     const ctx = createMockCtx();
-    ctx.queueConfirm(true);
     ctx.queueEditor('/xyz-custom-path/*');
     ctx.queueSelect('Project');
 
@@ -123,7 +119,6 @@ test('external file approved by user and persisted to global config', async () =
 
     const configResult = createConfigResult({ projectPath, globalPath });
     const ctx = createMockCtx();
-    ctx.queueConfirm(true);
     ctx.queueEditor('/abc-global-test/*');
     ctx.queueSelect('Global');
 
@@ -145,7 +140,6 @@ test('external file approved by user but not persisted', async () => {
 
     const configResult = createConfigResult({ projectPath, globalPath });
     const ctx = createMockCtx();
-    ctx.queueConfirm(true);
     ctx.queueEditor('/def-skip-test/*');
     ctx.queueSelect('No');
 
@@ -185,7 +179,7 @@ test('project file blocked by glob deny pattern', async () => {
 test('external file denied by user at prompt', async () => {
   const configResult = createConfigResult();
   const ctx = createMockCtx();
-  ctx.queueConfirm(false);
+  ctx.queueEditor(null);
 
   const result = await checkFileAccess('/etc/passwd', '/fake/cwd', configResult, ctx);
   strictEqual(result, false);

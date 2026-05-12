@@ -3,7 +3,7 @@ import { saveConfig } from './config.ts';
 import { normalizePath, classifyPath } from './guards.ts';
 import { matchesAnyGlob } from './matcher.ts';
 import { isExternalApproved, approveExternal } from './session.ts';
-import { promptAllowDeny, confirmAddToConfigWithTarget, promptPattern } from './prompts.ts';
+import { confirmAddToConfigWithTarget, promptPattern } from './prompts.ts';
 import type { ExtensionContext } from './prompts.ts';
 
 /**
@@ -42,12 +42,10 @@ export async function checkFileAccess(
     if (isExternalApproved(normalized)) return true;
     if (matchesAnyGlob(normalized, config.externalAllow)) return true;
 
-    const allowed = await promptAllowDeny(`Allow access to external file: ${filePath}?`, ctx);
-    if (!allowed) return false;
+    const pattern = await promptPattern(filePath, 'Allow external path pattern (Esc to reject)', ctx);
+    if (!pattern) return false;
 
     approveExternal(normalized);
-
-    const pattern = await promptPattern(filePath, 'External path pattern', ctx);
     if (pattern) {
       const addResult = await confirmAddToConfigWithTarget('externalAllow', ctx, pattern);
       if (addResult.confirmed) {

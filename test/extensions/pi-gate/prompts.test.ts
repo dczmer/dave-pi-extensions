@@ -1,36 +1,19 @@
 import { strictEqual } from 'node:assert';
 import { test } from 'node:test';
 import {
-  promptAllowDeny,
   promptPattern,
   confirmAddToConfig,
   confirmAddToConfigWithTarget,
+  type ExtensionContext,
 } from '../../../extensions/pi-gate/prompts.ts';
 
 function createMockCtx(ui: {
-  confirm?: (title: string, message: string) => Promise<boolean>;
   input?: (title: string, placeholder?: string) => Promise<string | undefined>;
   editor?: (title: string, prefill?: string) => Promise<string | undefined>;
   select?: (title: string, options: string[]) => Promise<string | undefined>;
 }) {
-  return { ui } as unknown as Parameters<typeof promptAllowDeny>[1];
+  return { ui } as unknown as ExtensionContext;
 }
-
-test('promptAllowDeny returns true when user selects Allow', async () => {
-  const ctx = createMockCtx({
-    confirm: () => Promise.resolve(true),
-  });
-  const result = await promptAllowDeny('Allow access to /tmp?', ctx);
-  strictEqual(result, true);
-});
-
-test('promptAllowDeny returns false when user selects Deny', async () => {
-  const ctx = createMockCtx({
-    confirm: () => Promise.resolve(false),
-  });
-  const result = await promptAllowDeny('Allow access to /tmp?', ctx);
-  strictEqual(result, false);
-});
 
 test('promptPattern returns edited value', async () => {
   const ctx = createMockCtx({

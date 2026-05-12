@@ -17,17 +17,6 @@ export interface ExtensionContext {
 }
 
 /**
- * Ask the user a yes/no question via a pi confirmation dialog.
- *
- * @param message - The question to display.
- * @param ctx - Pi extension context providing UI primitives.
- * @returns `true` if the user confirmed, `false` otherwise.
- */
-export async function promptAllowDeny(message: string, ctx: ExtensionContext): Promise<boolean> {
-  return await ctx.ui.confirm('pi-gate', message);
-}
-
-/**
  * Open a pi editor dialog pre-filled with a suggested pattern so the user can
  * refine it before saving to config.
  *

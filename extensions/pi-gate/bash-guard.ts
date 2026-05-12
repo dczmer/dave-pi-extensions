@@ -16,7 +16,7 @@ import { getSessionState, approveBashPattern } from './session.ts';
 import { matchesGlob } from './matcher.ts';
 import { extractPathsFromCommand } from './guards.ts';
 import { checkFileAccess } from './file-access.ts';
-import { promptAllowDeny, promptPattern, confirmAddToConfigWithTarget } from './prompts.ts';
+import { promptPattern, confirmAddToConfigWithTarget } from './prompts.ts';
 import type { ExtensionContext } from './prompts.ts';
 
 // ---------------------------------------------------------------------------
@@ -146,10 +146,7 @@ async function checkSingleCommand(
   const hasMatch = allPatterns.some((p) => matchesGlob(command, p));
 
   if (!hasMatch) {
-    const allowed = await promptAllowDeny(`Allow bash command: ${command}?`, ctx);
-    if (!allowed) return false;
-
-    const pattern = await promptPattern(command, 'Command pattern', ctx);
+    const pattern = await promptPattern(command, 'Allow command pattern (Esc to reject)', ctx);
     if (!pattern) return false;
 
     approveBashPattern(pattern);

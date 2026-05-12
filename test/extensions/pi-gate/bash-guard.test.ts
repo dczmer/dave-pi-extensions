@@ -8,22 +8,19 @@ import { checkBashCommand, parseCommandStatements } from '../../../extensions/pi
 import { resetSessionState, approveBashPattern } from '../../../extensions/pi-gate/session.ts';
 
 function createMockCtx() {
-  const confirmQueue: boolean[] = [];
   const editorQueue: (string | null)[] = [];
   const selectQueue: (string | null)[] = [];
   const notifications: Array<{ message: string; level: string }> = [];
 
   const ctx = {
     ui: {
-      confirm: () => Promise.resolve(confirmQueue.shift() ?? false),
-      editor: () => Promise.resolve(editorQueue.shift() ?? null),
+      editor: () => Promise.resolve(editorQueue.shift() ?? undefined),
       select: <T extends string>() => Promise.resolve((selectQueue.shift() ?? 'project') as T),
       notify: (message: string, level: string) => {
         notifications.push({ message, level });
       },
     },
     _notifications: notifications,
-    queueConfirm: (v: boolean) => confirmQueue.push(v),
     queueEditor: (v: string | null) => editorQueue.push(v),
     queueSelect: (v: string | null) => selectQueue.push(v),
   };
@@ -110,7 +107,6 @@ test('no match prompts user, allows, persists to project, recurses, succeeds', a
 
     const configResult = createConfigResult({ projectPath, globalPath });
     const ctx = createMockCtx();
-    ctx.queueConfirm(true);
     ctx.queueEditor('xyz-custom-cmd *');
     ctx.queueSelect('Project');
 
@@ -131,7 +127,6 @@ test('no match prompts user, allows, persists to global, recurses, succeeds', as
 
     const configResult = createConfigResult({ projectPath, globalPath });
     const ctx = createMockCtx();
-    ctx.queueConfirm(true);
     ctx.queueEditor('abc-global-test-cmd *');
     ctx.queueSelect('Global');
 
@@ -153,7 +148,6 @@ test('no match prompts user, allows, skips persist, recurses, succeeds', async (
 
     const configResult = createConfigResult({ projectPath, globalPath });
     const ctx = createMockCtx();
-    ctx.queueConfirm(true);
     ctx.queueEditor('def-skip-test-cmd *');
     ctx.queueSelect('No');
 
@@ -185,7 +179,7 @@ test('pattern matches but file access denies', async () => {
 test('user denies command at prompt', async () => {
   const configResult = createConfigResult();
   const ctx = createMockCtx();
-  ctx.queueConfirm(false);
+  ctx.queueEditor(null);
 
   const result = await checkBashCommand('rm -rf /', '/fake/cwd', configResult, ctx);
   strictEqual(result, false);
@@ -194,7 +188,6 @@ test('user denies command at prompt', async () => {
 test('user allows command but clears pattern', async () => {
   const configResult = createConfigResult();
   const ctx = createMockCtx();
-  ctx.queueConfirm(true);
   ctx.queueEditor('');
 
   const result = await checkBashCommand('rm -rf /', '/fake/cwd', configResult, ctx);
@@ -230,7 +223,6 @@ test('command with no file arguments', async () => {
 test("recursion doesn't cause infinite loop", async () => {
   const configResult = createConfigResult();
   const ctx = createMockCtx();
-  ctx.queueConfirm(true);
   ctx.queueEditor('custom-cmd *');
   ctx.queueSelect('No');
 
@@ -354,7 +346,6 @@ test('compound command: one statement denied', async () => {
     global: { bashAllow: [], externalAllow: [], projectDeny: [] },
   });
   const ctx = createMockCtx();
-  ctx.queueConfirm(false);
 
   const result = await checkBashCommand('cd /home && rm -rf /', '/fake/cwd', configResult, ctx);
   strictEqual(result, false);
