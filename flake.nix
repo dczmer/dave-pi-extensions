@@ -19,6 +19,7 @@
           nodejs
           prettierd
           rtk
+          mdl
         ];
         extraCombinators = with dave-shield.lib.${system}.jailCombinators; [
           # HACK to make npm scripts run
