@@ -1,9 +1,9 @@
 import { strictEqual, deepStrictEqual } from "node:assert";
 import { test } from "node:test";
-import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from "node:fs";
+import { mkdtempSync, rmSync, mkdirSync, readFileSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { loadConfig, type ConfigResult } from "../../../extensions/pi-gate/config.ts";
+import { join, dirname } from "node:path";
+import { type ConfigResult } from "../../../extensions/pi-gate/config.ts";
 import { checkBashCommand, parseCommandStatements } from "../../../extensions/pi-gate/bash-guard.ts";
 import { resetSessionState, approveBashPattern } from "../../../extensions/pi-gate/session.ts";
 
@@ -41,228 +41,195 @@ function withTempDir<T>(fn: (dir: string) => T): T {
 }
 
 function createConfigResult(overrides?: Partial<ConfigResult>): ConfigResult {
-  const base = {
+  const empty = () => ({
     bashAllow: [] as string[],
     externalAllow: [] as string[],
     projectDeny: [] as string[],
-  };
+  });
   return {
-    merged: { ...base, ...(overrides?.merged || {}) },
-    global: { ...base, ...(overrides?.global || {}) },
-    project: { ...base, ...(overrides?.project || {}) },
-    globalPath: "/tmp/global.json",
-    projectPath: "/tmp/project.json",
+    merged: { ...empty(), ...(overrides?.merged || {}) },
+    global: { ...empty(), ...(overrides?.global || {}) },
+    project: { ...empty(), ...(overrides?.project || {}) },
+    globalPath: "/fake/global.json",
+    projectPath: "/fake/project.json",
     ...overrides,
   };
 }
 
 test("command allowed by config bashAllow pattern", async () => {
-  await withTempDir(async (dir) => {
-    const configResult = createConfigResult({
-      merged: { bashAllow: ["ls *"], externalAllow: [], projectDeny: [] },
-      project: { bashAllow: ["ls *"], externalAllow: [], projectDeny: [] },
-      global: { bashAllow: [], externalAllow: [], projectDeny: [] },
-    });
-    const ctx = createMockCtx();
-    const result = await checkBashCommand("ls -la", dir, configResult, ctx);
-    strictEqual(result, true);
+  const configResult = createConfigResult({
+    merged: { bashAllow: ["ls *"], externalAllow: [], projectDeny: [] },
+    project: { bashAllow: ["ls *"], externalAllow: [], projectDeny: [] },
+    global: { bashAllow: [], externalAllow: [], projectDeny: [] },
   });
+  const ctx = createMockCtx();
+  const result = await checkBashCommand("ls -la", "/fake/cwd", configResult, ctx);
+  strictEqual(result, true);
 });
 
 test("command allowed by session approved pattern", async () => {
-  await withTempDir(async (dir) => {
-    resetSessionState();
-    approveBashPattern("cat *");
-    const configResult = createConfigResult({
-      merged: { bashAllow: [], externalAllow: [], projectDeny: [] },
-      project: { bashAllow: [], externalAllow: [], projectDeny: [] },
-      global: { bashAllow: [], externalAllow: [], projectDeny: [] },
-    });
-    const ctx = createMockCtx();
-    const result = await checkBashCommand("cat file.txt", dir, configResult, ctx);
-    strictEqual(result, true);
+  resetSessionState();
+  approveBashPattern("cat *");
+  const configResult = createConfigResult({
+    merged: { bashAllow: [], externalAllow: [], projectDeny: [] },
+    project: { bashAllow: [], externalAllow: [], projectDeny: [] },
+    global: { bashAllow: [], externalAllow: [], projectDeny: [] },
   });
+  const ctx = createMockCtx();
+  const result = await checkBashCommand("cat file.txt", "/fake/cwd", configResult, ctx);
+  strictEqual(result, true);
 });
 
 test("command with project files all allowed", async () => {
-  await withTempDir(async (dir) => {
-    writeFileSync(join(dir, "main.ts"), "hello");
-    const configResult = createConfigResult({
-      merged: { bashAllow: ["cat *"], externalAllow: [], projectDeny: [] },
-      project: { bashAllow: ["cat *"], externalAllow: [], projectDeny: [] },
-      global: { bashAllow: [], externalAllow: [], projectDeny: [] },
-    });
-    const ctx = createMockCtx();
-    const result = await checkBashCommand("cat main.ts", dir, configResult, ctx);
-    strictEqual(result, true);
+  const configResult = createConfigResult({
+    merged: { bashAllow: ["cat *"], externalAllow: [], projectDeny: [] },
+    project: { bashAllow: ["cat *"], externalAllow: [], projectDeny: [] },
+    global: { bashAllow: [], externalAllow: [], projectDeny: [] },
   });
+  const ctx = createMockCtx();
+  const result = await checkBashCommand("cat main.ts", "/fake/cwd", configResult, ctx);
+  strictEqual(result, true);
 });
 
 test("command with external files all allowed", async () => {
-  await withTempDir(async (dir) => {
-    const configResult = createConfigResult({
-      merged: { bashAllow: ["cat *"], externalAllow: ["/tmp/*"], projectDeny: [] },
-      project: { bashAllow: ["cat *"], externalAllow: ["/tmp/*"], projectDeny: [] },
-      global: { bashAllow: [], externalAllow: [], projectDeny: [] },
-    });
-    const ctx = createMockCtx();
-    const result = await checkBashCommand("cat /tmp/foo.txt", dir, configResult, ctx);
-    strictEqual(result, true);
+  const configResult = createConfigResult({
+    merged: { bashAllow: ["cat *"], externalAllow: ["/tmp/*"], projectDeny: [] },
+    project: { bashAllow: ["cat *"], externalAllow: ["/tmp/*"], projectDeny: [] },
+    global: { bashAllow: [], externalAllow: [], projectDeny: [] },
   });
+  const ctx = createMockCtx();
+  const result = await checkBashCommand("cat /tmp/foo.txt", "/fake/cwd", configResult, ctx);
+  strictEqual(result, true);
 });
 
 test("no match prompts user, allows, persists to project, recurses, succeeds", async () => {
-  await withTempDir(async (dir) => {
-    const projectConfigDir = join(dir, ".pi", "extensions");
-    mkdirSync(projectConfigDir, { recursive: true });
+  withTempDir(async (dir) => {
+    const projectPath = join(dir, ".pi", "extensions", "pi-gate.json");
+    const globalPath = join(dir, "global.json");
+    mkdirSync(dirname(projectPath), { recursive: true });
 
-    // Use temp file for global config to ensure isolation from real config
-    const tempGlobalPath = join(dir, "global-pi-gate.json");
-    process.env.PI_GATE_GLOBAL_CONFIG_PATH = tempGlobalPath;
+    const configResult = createConfigResult({ projectPath, globalPath });
+    const ctx = createMockCtx();
+    ctx.queueConfirm(true);
+    ctx.queueEditor("xyz-custom-cmd *");
+    ctx.queueSelect("Project");
 
-    try {
-      const configResult = loadConfig(dir);
-      const ctx = createMockCtx();
-      ctx.queueConfirm(true); // Allow command
-      ctx.queueEditor("xyz-custom-cmd *"); // Pattern
-      ctx.queueSelect("Project"); // Save to project
+    const result = await checkBashCommand("xyz-custom-cmd arg", dir, configResult, ctx);
+    strictEqual(result, true);
+    deepStrictEqual(configResult.project.bashAllow, ["xyz-custom-cmd *"]);
 
-      const result = await checkBashCommand("xyz-custom-cmd arg", dir, configResult, ctx);
-      strictEqual(result, true);
-
-      const reloaded = loadConfig(dir);
-      deepStrictEqual(reloaded.project.bashAllow, ["xyz-custom-cmd *"]);
-    } finally {
-      delete process.env.PI_GATE_GLOBAL_CONFIG_PATH;
-    }
+    const saved = JSON.parse(readFileSync(projectPath, "utf-8"));
+    deepStrictEqual(saved, { bashAllow: ["xyz-custom-cmd *"], externalAllow: [], projectDeny: [] });
   });
 });
 
 test("no match prompts user, allows, persists to global, recurses, succeeds", async () => {
-  await withTempDir(async (dir) => {
-    const projectConfigDir = join(dir, ".pi", "extensions");
-    mkdirSync(projectConfigDir, { recursive: true });
+  withTempDir(async (dir) => {
+    const projectPath = join(dir, ".pi", "extensions", "pi-gate.json");
+    const globalPath = join(dir, "global.json");
+    mkdirSync(dirname(projectPath), { recursive: true });
 
-    // Use temp file for global config to avoid modifying real config
-    const tempGlobalPath = join(dir, "global-pi-gate.json");
-    process.env.PI_GATE_GLOBAL_CONFIG_PATH = tempGlobalPath;
+    const configResult = createConfigResult({ projectPath, globalPath });
+    const ctx = createMockCtx();
+    ctx.queueConfirm(true);
+    ctx.queueEditor("abc-global-test-cmd *");
+    ctx.queueSelect("Global");
 
-    try {
-      const configResult = loadConfig(dir);
-      const ctx = createMockCtx();
-      ctx.queueConfirm(true); // Allow command
-      ctx.queueEditor("abc-global-test-cmd *"); // Pattern - unique
-      ctx.queueSelect("Global"); // Save to global
+    const result = await checkBashCommand("abc-global-test-cmd arg", dir, configResult, ctx);
+    strictEqual(result, true);
+    deepStrictEqual(configResult.project.bashAllow, []);
+    deepStrictEqual(configResult.global.bashAllow, ["abc-global-test-cmd *"]);
 
-      const result = await checkBashCommand("abc-global-test-cmd arg", dir, configResult, ctx);
-      strictEqual(result, true);
-
-      // Project should be empty since we saved to global
-      const reloaded = loadConfig(dir);
-      deepStrictEqual(reloaded.project.bashAllow, []);
-      // Global should have the pattern
-      deepStrictEqual(reloaded.global.bashAllow, ["abc-global-test-cmd *"]);
-    } finally {
-      delete process.env.PI_GATE_GLOBAL_CONFIG_PATH;
-    }
+    const saved = JSON.parse(readFileSync(globalPath, "utf-8"));
+    deepStrictEqual(saved, { bashAllow: ["abc-global-test-cmd *"], externalAllow: [], projectDeny: [] });
   });
 });
 
 test("no match prompts user, allows, skips persist, recurses, succeeds", async () => {
-  await withTempDir(async (dir) => {
-    const projectConfigDir = join(dir, ".pi", "extensions");
-    mkdirSync(projectConfigDir, { recursive: true });
+  withTempDir(async (dir) => {
+    const projectPath = join(dir, ".pi", "extensions", "pi-gate.json");
+    const globalPath = join(dir, "global.json");
+    mkdirSync(dirname(projectPath), { recursive: true });
 
-    const configResult = loadConfig(dir);
+    const configResult = createConfigResult({ projectPath, globalPath });
     const ctx = createMockCtx();
-    ctx.queueConfirm(true); // Allow command
-    ctx.queueEditor("def-skip-test-cmd *"); // Pattern - unique
-    ctx.queueSelect("No"); // Don't add to config
+    ctx.queueConfirm(true);
+    ctx.queueEditor("def-skip-test-cmd *");
+    ctx.queueSelect("No");
 
     const result = await checkBashCommand("def-skip-test-cmd arg", dir, configResult, ctx);
     strictEqual(result, true);
+    deepStrictEqual(configResult.project.bashAllow, []);
+    deepStrictEqual(configResult.global.bashAllow, []);
 
-    const reloaded = loadConfig(dir);
-    deepStrictEqual(reloaded.project.bashAllow, []);
+    strictEqual(existsSync(projectPath), false);
+    strictEqual(existsSync(globalPath), false);
   });
 });
 
 test("pattern matches but file access denies", async () => {
-  await withTempDir(async (dir) => {
-    const configResult = createConfigResult({
-      merged: { bashAllow: ["cat *"], externalAllow: [], projectDeny: ["secret.txt"] },
-      project: { bashAllow: ["cat *"], externalAllow: [], projectDeny: ["secret.txt"] },
-      global: { bashAllow: [], externalAllow: [], projectDeny: [] },
-    });
-    const ctx = createMockCtx();
-    const result = await checkBashCommand("cat secret.txt", dir, configResult, ctx);
-    strictEqual(result, false);
-    strictEqual(ctx._notifications.some((n) => n.message.includes("Blocked")), true);
+  const configResult = createConfigResult({
+    merged: { bashAllow: ["cat *"], externalAllow: [], projectDeny: ["secret.txt"] },
+    project: { bashAllow: ["cat *"], externalAllow: [], projectDeny: ["secret.txt"] },
+    global: { bashAllow: [], externalAllow: [], projectDeny: [] },
   });
+  const ctx = createMockCtx();
+  const result = await checkBashCommand("cat secret.txt", "/fake/cwd", configResult, ctx);
+  strictEqual(result, false);
+  strictEqual(ctx._notifications.some((n) => n.message.includes("Blocked")), true);
 });
 
 test("user denies command at prompt", async () => {
-  await withTempDir(async (dir) => {
-    const configResult = loadConfig(dir);
-    const ctx = createMockCtx();
-    ctx.queueConfirm(false);
+  const configResult = createConfigResult();
+  const ctx = createMockCtx();
+  ctx.queueConfirm(false);
 
-    const result = await checkBashCommand("rm -rf /", dir, configResult, ctx);
-    strictEqual(result, false);
-  });
+  const result = await checkBashCommand("rm -rf /", "/fake/cwd", configResult, ctx);
+  strictEqual(result, false);
 });
 
 test("user allows command but clears pattern", async () => {
-  await withTempDir(async (dir) => {
-    const configResult = loadConfig(dir);
-    const ctx = createMockCtx();
-    ctx.queueConfirm(true);
-    ctx.queueEditor("");
+  const configResult = createConfigResult();
+  const ctx = createMockCtx();
+  ctx.queueConfirm(true);
+  ctx.queueEditor("");
 
-    const result = await checkBashCommand("rm -rf /", dir, configResult, ctx);
-    strictEqual(result, false);
-  });
+  const result = await checkBashCommand("rm -rf /", "/fake/cwd", configResult, ctx);
+  strictEqual(result, false);
 });
 
 test("multiple files in command, one denied", async () => {
-  await withTempDir(async (dir) => {
-    writeFileSync(join(dir, "main.ts"), "hello");
-    const configResult = createConfigResult({
-      merged: { bashAllow: ["cat *"], externalAllow: [], projectDeny: ["secret.txt"] },
-      project: { bashAllow: ["cat *"], externalAllow: [], projectDeny: ["secret.txt"] },
-      global: { bashAllow: [], externalAllow: [], projectDeny: [] },
-    });
-    const ctx = createMockCtx();
-    const result = await checkBashCommand("cat main.ts secret.txt", dir, configResult, ctx);
-    strictEqual(result, false);
-    strictEqual(ctx._notifications.some((n) => n.message.includes("Blocked")), true);
+  const configResult = createConfigResult({
+    merged: { bashAllow: ["cat *"], externalAllow: [], projectDeny: ["secret.txt"] },
+    project: { bashAllow: ["cat *"], externalAllow: [], projectDeny: ["secret.txt"] },
+    global: { bashAllow: [], externalAllow: [], projectDeny: [] },
   });
+  const ctx = createMockCtx();
+  const result = await checkBashCommand("cat main.ts secret.txt", "/fake/cwd", configResult, ctx);
+  strictEqual(result, false);
+  strictEqual(ctx._notifications.some((n) => n.message.includes("Blocked")), true);
 });
 
 test("command with no file arguments", async () => {
-  await withTempDir(async (dir) => {
-    const configResult = createConfigResult({
-      merged: { bashAllow: ["ls *"], externalAllow: [], projectDeny: [] },
-      project: { bashAllow: ["ls *"], externalAllow: [], projectDeny: [] },
-      global: { bashAllow: [], externalAllow: [], projectDeny: [] },
-    });
-    const ctx = createMockCtx();
-    const result = await checkBashCommand("ls -la", dir, configResult, ctx);
-    strictEqual(result, true);
+  const configResult = createConfigResult({
+    merged: { bashAllow: ["ls *"], externalAllow: [], projectDeny: [] },
+    project: { bashAllow: ["ls *"], externalAllow: [], projectDeny: [] },
+    global: { bashAllow: [], externalAllow: [], projectDeny: [] },
   });
+  const ctx = createMockCtx();
+  const result = await checkBashCommand("ls -la", "/fake/cwd", configResult, ctx);
+  strictEqual(result, true);
 });
 
 test("recursion doesn't cause infinite loop", async () => {
-  await withTempDir(async (dir) => {
-    const configResult = loadConfig(dir);
-    const ctx = createMockCtx();
-    ctx.queueConfirm(true);
-    ctx.queueEditor("custom-cmd *");
-    ctx.queueSelect("No");
+  const configResult = createConfigResult();
+  const ctx = createMockCtx();
+  ctx.queueConfirm(true);
+  ctx.queueEditor("custom-cmd *");
+  ctx.queueSelect("No");
 
-    const result = await checkBashCommand("custom-cmd arg", dir, configResult, ctx);
-    strictEqual(result, true);
-  });
+  const result = await checkBashCommand("custom-cmd arg", "/fake/cwd", configResult, ctx);
+  strictEqual(result, true);
 });
 
 test("parseCommandStatements: simple command", () => {
@@ -311,7 +278,6 @@ test("parseCommandStatements: multiple substitutions", () => {
 });
 
 test("parseCommandStatements: nested substitutions", () => {
-  // bash-parser does not support nested $() — parse fails
   const result = parseCommandStatements("echo $(echo $(whoami))");
   strictEqual(result, null);
 });
@@ -322,7 +288,6 @@ test("parseCommandStatements: handles quoted strings with separators", () => {
 });
 
 test("parseCommandStatements: heredoc with && inside not split", () => {
-  // bash-parser cannot handle heredocs — parse fails
   const cmd = `cat <<EOF
 Fix bug && close issue
 Handle edge; case properly
@@ -332,7 +297,6 @@ EOF`;
 });
 
 test("parseCommandStatements: heredoc with <<- strips leading tabs", () => {
-  // bash-parser cannot handle heredocs — parse fails
   const cmd = `cat <<-EOF
 \t\tcontent with && and ;
 \tEOF`;
@@ -341,7 +305,6 @@ test("parseCommandStatements: heredoc with <<- strips leading tabs", () => {
 });
 
 test("parseCommandStatements: quoted heredoc delimiter", () => {
-  // bash-parser cannot handle heredocs — parse fails
   const cmd = `cat <<'EOF'
 Fix bug && close issue
 EOF`;
@@ -350,7 +313,6 @@ EOF`;
 });
 
 test("parseCommandStatements: heredoc followed by && command", () => {
-  // bash-parser cannot handle heredocs — parse fails
   const cmd = `cat <<EOF
 content
 EOF && echo done`;
@@ -359,7 +321,6 @@ EOF && echo done`;
 });
 
 test("parseCommandStatements: git commit with heredoc message", () => {
-  // bash-parser cannot handle heredocs — parse fails
   const cmd = `git commit -F - <<EOF
 Fix bug && close issue
 
@@ -370,30 +331,25 @@ EOF`;
 });
 
 test("compound command: all statements allowed", async () => {
-  await withTempDir(async (dir) => {
-    const configResult = createConfigResult({
-      merged: { bashAllow: ["cd *", "ls *"], externalAllow: [], projectDeny: [] },
-      project: { bashAllow: ["cd *", "ls *"], externalAllow: [], projectDeny: [] },
-      global: { bashAllow: [], externalAllow: [], projectDeny: [] },
-    });
-    const ctx = createMockCtx();
-    // Use project-relative paths to avoid external file prompts
-    const result = await checkBashCommand("cd subdir && ls -la", dir, configResult, ctx);
-    strictEqual(result, true);
+  const configResult = createConfigResult({
+    merged: { bashAllow: ["cd *", "ls *"], externalAllow: [], projectDeny: [] },
+    project: { bashAllow: ["cd *", "ls *"], externalAllow: [], projectDeny: [] },
+    global: { bashAllow: [], externalAllow: [], projectDeny: [] },
   });
+  const ctx = createMockCtx();
+  const result = await checkBashCommand("cd subdir && ls -la", "/fake/cwd", configResult, ctx);
+  strictEqual(result, true);
 });
 
 test("compound command: one statement denied", async () => {
-  await withTempDir(async (dir) => {
-    const configResult = createConfigResult({
-      merged: { bashAllow: ["cd *"], externalAllow: [], projectDeny: [] },
-      project: { bashAllow: ["cd *"], externalAllow: [], projectDeny: [] },
-      global: { bashAllow: [], externalAllow: [], projectDeny: [] },
-    });
-    const ctx = createMockCtx();
-    ctx.queueConfirm(false);
-
-    const result = await checkBashCommand("cd /home && rm -rf /", dir, configResult, ctx);
-    strictEqual(result, false);
+  const configResult = createConfigResult({
+    merged: { bashAllow: ["cd *"], externalAllow: [], projectDeny: [] },
+    project: { bashAllow: ["cd *"], externalAllow: [], projectDeny: [] },
+    global: { bashAllow: [], externalAllow: [], projectDeny: [] },
   });
+  const ctx = createMockCtx();
+  ctx.queueConfirm(false);
+
+  const result = await checkBashCommand("cd /home && rm -rf /", "/fake/cwd", configResult, ctx);
+  strictEqual(result, false);
 });

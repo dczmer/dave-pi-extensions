@@ -1,7 +1,7 @@
 import { strictEqual, deepStrictEqual, throws } from "node:assert";
 import { test } from "node:test";
 import { mkdtempSync, rmSync, writeFileSync, mkdirSync, statSync, readdirSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { tmpdir, homedir } from "node:os";
 import { join } from "node:path";
 import {
   type PiGateConfig,
@@ -172,6 +172,6 @@ test("ConfigResult paths are correct", () => {
   withTempDir((dir) => {
     const result = loadConfig(dir);
     strictEqual(result.projectPath, join(dir, ".pi", "extensions", "pi-gate.json"));
-    strictEqual(result.globalPath.includes(".pi/agent/extensions/pi-gate.json"), true);
+    strictEqual(result.globalPath, join(homedir(), ".pi", "agent", "extensions", "pi-gate.json"));
   });
 });

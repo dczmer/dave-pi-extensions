@@ -34,49 +34,77 @@ Node modules managed at project root only. All extensions use shared dependencie
 
 **Tests must NEVER modify real user configuration files.**
 
-Mock `node:fs` functions to intercept file reads and writes. Use
-`t.mock.method` from `node:test`. Mocks auto-restore when the test ends.
+#### Filesystem isolation: tempfs directories
 
-**Requirements for mockable code:**
-- Source uses namespace import: `import * as fs from "node:fs"`
-- Source calls methods on the namespace: `fs.readFileSync(...)`
-- Do NOT destructure imports (`import { readFileSync }`) — those capture
-  function references at import time and cannot be mocked.
-
-**Example pattern:**
+When test code needs to read or write files, create a temporary directory with
+`mkdtempSync` and clean it up after the test.  Use a `withTempDir` helper:
 
 ```typescript
-import * as fs from "node:fs";
-import { test } from "node:test";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
-test("config saves to in-memory fs", async (t) => {
-  // In-memory filesystem for the test
-  const files = new Map<string, string>();
+function withTempDir<T>(fn: (dir: string) => T): T {
+  const dir = mkdtempSync(join(tmpdir(), "pi-gate-"));
+  try {
+    return fn(dir);
+  } finally {
+    rmSync(dir, { recursive: true });
+  }
+}
 
-  t.mock.method(fs, "existsSync", (p: fs.PathOrFileDescriptor) =>
-    files.has(String(p))
-  );
-  t.mock.method(fs, "readFileSync", (p, opts) => {
-    const content = files.get(String(p));
-    if (content === undefined) throw new Error("ENOENT");
-    return content;
+test("load/save roundtrip", () => {
+  withTempDir((dir) => {
+    // ... use dir as isolated filesystem root ...
   });
-  t.mock.method(fs, "writeFileSync", (p, data) => {
-    files.set(String(p), String(data));
-  });
-  t.mock.method(fs, "mkdirSync", () => undefined);
-  t.mock.method(fs, "renameSync", (oldP, newP) => {
-    files.set(String(newP), files.get(String(oldP)) ?? "");
-  });
-
-  // ... test uses the in-memory store, no real fs touched ...
 });
 ```
 
-- Never write to `process.env` to redirect config paths
-- Prefer mocks scoped to `t` — auto-cleanup on test completion
-- Where mocking is impractical (e.g., tests that need real fs for
-  `mkdtempSync`), isolate with temp dirs and `rmSync` in `finally`
+This is the **primary** fs-isolation pattern.  It uses real `node:fs` so there
+are no impedance mismatches with the code under test, and cleanup is automatic.
+
+#### Config module mocking
+
+When testing code that **consumes** a `ConfigResult` (e.g., `checkBashCommand`,
+`checkFileAccess`), do not call `loadConfig(cwd)` with temp directories and env
+var overrides.  Instead, mock the config module's exports directly with
+`t.mock.method`:
+
+```typescript
+import * as config from "../../../extensions/pi-gate/config.ts";
+import { test } from "node:test";
+
+test("command checked against mocked config", async (t) => {
+  const fakeResult: config.ConfigResult = {
+    merged:  { bashAllow: ["cat *"], externalAllow: [], projectDeny: [] },
+    global:  { bashAllow: [],        externalAllow: [], projectDeny: [] },
+    project: { bashAllow: ["cat *"], externalAllow: [], projectDeny: [] },
+    globalPath:  "/fake/global.json",
+    projectPath: "/fake/project.json",
+  };
+
+  t.mock.method(config, "loadConfig", () => fakeResult);
+  t.mock.method(config, "saveConfig", () => {});
+
+  // ... test code that calls loadConfig / saveConfig ...
+});
+```
+
+- **Config module itself** (`config.test.ts`): tests that validate `loadConfig`
+  and `saveConfig` behavior should use tempfs directories (above).  They are
+  testing the real config module, not consuming it.
+- **Consumer modules** (`bash-guard.test.ts`, `file-access.test.ts`): mock
+  `loadConfig`/`saveConfig` to return crafted `ConfigResult` objects.  This
+  eliminates the need for temp directories and, critically, for `process.env`
+  overrides.
+
+#### Environment variable isolation
+
+- **Never write to `process.env`** to redirect config paths or other behavior.
+  Use `t.mock.method` on the relevant module instead.
+- If a function reads from `process.env` (e.g., `homedir()` from `node:os`),
+  mock that specific function with `t.mock.method` — do not mutate the env.
+- Mocks scoped to `t` auto-cleanup on test completion.
 
 ## Project Structure
 

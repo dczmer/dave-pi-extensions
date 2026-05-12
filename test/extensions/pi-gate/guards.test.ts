@@ -1,5 +1,7 @@
 import { strictEqual, deepStrictEqual } from "node:assert";
 import { test } from "node:test";
+import { homedir } from "node:os";
+import { join } from "node:path";
 import { classifyPath, normalizePath, extractPathsFromCommand } from "../../../extensions/pi-gate/guards.ts";
 
 test("project file classification", () => {
@@ -11,14 +13,7 @@ test("external file classification", () => {
 });
 
 test("tilde expansion to home directory", () => {
-  const originalHome = process.env.HOME;
-  process.env.HOME = "/home/testuser";
-  try {
-    strictEqual(normalizePath("~/file.txt", "/cwd"), "/home/testuser/file.txt");
-  } finally {
-    if (originalHome !== undefined) process.env.HOME = originalHome;
-    else delete process.env.HOME;
-  }
+  strictEqual(normalizePath("~/file.txt", "/cwd"), join(homedir(), "file.txt"));
 });
 
 test("relative path resolution with ./", () => {
