@@ -1,0 +1,8 @@
+node_modules
+.direnv
+.pi
+dist
+coverage
+*.log
+package-lock.json
+flake.lock

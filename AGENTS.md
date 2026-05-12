@@ -185,6 +185,7 @@ test/
    - `npm test` — run all tests
    - `npm run typecheck` — type check
    - `npx eslint .` — lint
+   - `npm run format:check` — check formatting
 4. Fix issues, repeat until clean
 5. Only then consider work complete
 
@@ -210,4 +211,5 @@ export interface PiGateConfig { ... }
 - [ ] Dev dependencies (`typescript`, `@types/node`) allowed with manual install
 - [ ] Tests use `node:test` and `node:assert`
 - [ ] Project `package.json` and root `tsconfig.json` present
+- [ ] Prettier config (`.prettierrc.json`) and ignore (`.prettierignore`) present
 - [ ] All verification commands pass before finishing
