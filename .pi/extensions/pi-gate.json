@@ -4,7 +4,8 @@
     "which tsc eslint",
     "npx eslint*",
     "npm run*",
-    "npx tsc *"
+    "npx tsc *",
+    "npx prettier*"
   ],
   "externalAllow": [
     "/nix*"

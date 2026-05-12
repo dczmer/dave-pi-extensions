@@ -4,7 +4,8 @@
  * Toggle read-only planning mode. Blocks edit/write tools and
  * destructive bash commands. Injects planning instructions into
  * system prompt.
- * Use /plan or --plan flag.
+ * Plan mode is active by default. Use /plan to toggle, or --no-plan
+ * to start a session without it.
  */
 
 import type { ExtensionAPI, ExtensionContext } from '@mariozechner/pi-coding-agent';
@@ -33,8 +34,9 @@ function updateStatus(_pi: ExtensionAPI, enabled: boolean, ctx: ExtensionContext
 /**
  * Register the plan-mode extension.
  *
- * Installs a CLI flag (`--plan`), a slash command (`/plan`), a keyboard
+ * Installs a CLI flag (`--no-plan`), a slash command (`/plan`), a keyboard
  * shortcut (Ctrl-Shift-Z), and event hooks that enforce read-only mode.
+ * Plan mode is active by default; pass `--no-plan` to disable on startup.
  * When active, edit/write tools and destructive bash commands are blocked,
  * and a planning prompt is injected into the system message.  Toggle state
  * is persisted in session history so it survives restarts.
@@ -42,7 +44,7 @@ function updateStatus(_pi: ExtensionAPI, enabled: boolean, ctx: ExtensionContext
  * @param pi - Extension API instance provided by the pi agent harness.
  */
 export default function (pi: ExtensionAPI): void {
-  let planModeEnabled = false;
+  let planModeEnabled = true;
 
   function persist(): void {
     pi.appendEntry('plan-mode-state', { enabled: planModeEnabled });
@@ -60,8 +62,8 @@ export default function (pi: ExtensionAPI): void {
   }
 
   // CLI flag
-  pi.registerFlag('plan', {
-    description: 'Start in planning mode (read-only exploration)',
+  pi.registerFlag('no-plan', {
+    description: 'Start without planning mode (plan mode is active by default)',
     type: 'boolean',
     default: false,
   });
@@ -111,8 +113,9 @@ export default function (pi: ExtensionAPI): void {
 
   // Restore state on session start
   pi.on('session_start', async (_event, ctx) => {
-    if (pi.getFlag('plan') === true) {
-      planModeEnabled = true;
+    // Plan mode defaults to on; --no-plan opts out for fresh sessions
+    if (pi.getFlag('no-plan') === true) {
+      planModeEnabled = false;
     }
 
     // Restore persisted toggle state
