@@ -13,6 +13,9 @@ import { truncateToWidth, visibleWidth } from '@mariozechner/pi-tui';
 // Progress bar characters (8 steps for smooth bar)
 const BAR_CHARS = [' ', '▏', '▎', '▍', '▌', '▋', '▊', '▉', '█'];
 
+const YELLOW_THRESHOLD = 80_000;
+const RED_THRESHOLD = 120_000;
+
 function renderProgressBar(used: number, max: number, width: number, theme: any): string {
   if (width < 3) return '';
 
@@ -22,9 +25,9 @@ function renderProgressBar(used: number, max: number, width: number, theme: any)
   const partial = Math.floor((filledWidth - filledFull) * 8);
 
   let color: string;
-  if (ratio <= 0.4) color = 'success';
-  else if (ratio <= 0.6) color = 'warning';
-  else color = 'error';
+  if (used >= RED_THRESHOLD) color = 'error';
+  else if (used >= YELLOW_THRESHOLD) color = 'warning';
+  else color = 'success';
 
   let bar = theme.fg(color, '█'.repeat(filledFull));
   if (filledFull < width) {
