@@ -145,9 +145,7 @@ test('malformed JSON in project file throws error with clear message', () => {
     throws(
       () => loadConfig(dir),
       (err: Error) =>
-        err instanceof SyntaxError &&
-        err.message.includes(configPath) &&
-        err.message.includes('trailing comma'),
+        err instanceof SyntaxError && err.message.includes(configPath) && err.message.includes('trailing comma'),
     );
   });
 });

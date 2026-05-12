@@ -53,7 +53,7 @@ export function classifyPath(filePath: string, cwd: string): 'project' | 'extern
 function consumeWhile(
   command: string,
   start: number,
-  predicate: (ch: string) => boolean
+  predicate: (ch: string) => boolean,
 ): { token: string; newI: number } {
   let j = start;
   while (j < command.length && predicate(command[j]!)) {
@@ -74,7 +74,7 @@ function extractQuoteWithEscapes(
   command: string,
   start: number,
   contentStart: number,
-  closeChar: string
+  closeChar: string,
 ): { token: string; newI: number } {
   let j = contentStart;
   while (j < command.length && command[j] !== closeChar) {
@@ -87,11 +87,7 @@ function extractQuoteWithEscapes(
   return { token: command.slice(start, j + 1), newI: j + 1 };
 }
 
-function skipBalancedParens(
-  command: string,
-  start: number,
-  isOpen: (cmd: string, index: number) => boolean
-): number {
+function skipBalancedParens(command: string, start: number, isOpen: (cmd: string, index: number) => boolean): number {
   let depth = 1;
   let j = start;
   while (j < command.length && depth > 0) {

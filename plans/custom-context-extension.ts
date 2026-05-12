@@ -94,13 +94,13 @@ export default function (pi: ExtensionAPI) {
   const baseDir = process.env.PI_CUSTOM_DIR;
   if (!baseDir) return;
 
-  pi.on('resources_discover', async (_event, _ctx) => ({
+  pi.on('resources_discover', async () => ({
     skillPaths: existsSync(join(baseDir, 'skills')) ? [join(baseDir, 'skills')] : [],
     promptPaths: existsSync(join(baseDir, 'prompts')) ? [join(baseDir, 'prompts')] : [],
     themePaths: existsSync(join(baseDir, 'themes')) ? [join(baseDir, 'themes')] : [],
   }));
 
-  pi.on('before_agent_start', async (event, _ctx) => {
+  pi.on('before_agent_start', async (event) => {
     const result: { systemPrompt?: string; message?: { customType: string; content: string; display: boolean } } = {};
 
     const appendSystem = join(baseDir, 'APPEND_SYSTEM.md');
