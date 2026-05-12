@@ -62,7 +62,10 @@ function loadSingleConfig(configPath: string): PiGateConfig {
     parsed = JSON.parse(raw);
   } catch (err) {
     throw new SyntaxError(
-      `pi-gate: malformed JSON in ${configPath}: ${err instanceof Error ? err.message : String(err)}`,
+      `pi-gate: JSON syntax error in ${configPath}.\n` +
+        `Common cause: trailing commas are not allowed in strict JSON.\n` +
+        `Please fix the file and try again.\n` +
+        `Original error: ${err instanceof Error ? err.message : String(err)}`,
       { cause: err },
     );
   }

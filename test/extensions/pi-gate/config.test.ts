@@ -139,9 +139,16 @@ test('malformed JSON in project file throws error with clear message', () => {
   withTempDir((dir) => {
     const projectConfigDir = join(dir, '.pi', 'extensions');
     mkdirSync(projectConfigDir, { recursive: true });
-    writeFileSync(join(projectConfigDir, 'pi-gate.json'), '{ not json');
+    const configPath = join(projectConfigDir, 'pi-gate.json');
+    writeFileSync(configPath, '{ not json');
 
-    throws(() => loadConfig(dir), SyntaxError);
+    throws(
+      () => loadConfig(dir),
+      (err: Error) =>
+        err instanceof SyntaxError &&
+        err.message.includes(configPath) &&
+        err.message.includes('trailing comma'),
+    );
   });
 });
 
