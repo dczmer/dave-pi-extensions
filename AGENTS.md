@@ -189,8 +189,32 @@ test/
    - `npm run typecheck` — type check
    - `npx eslint .` — lint
    - `npm run format:check` — check formatting
+   - `mdl README.md docs/**/*.md` — lint markdown docs (only when these files change)
 4. Fix issues, repeat until clean
 5. Only then consider work complete
+
+### Markdown Linting (mdl)
+
+Project uses [mdl](https://github.com/markdownlint/markdownlint) with custom style in `.mdl_style.rb`.
+
+Key rules affecting editing:
+
+- **MD004 `:sublist`** — unordered lists may use different bullet characters (`-`, `*`, `+`) at different nesting levels. Matches bullets.vim behavior.
+- **MD007 `indent 4`** — nested list items need 4 spaces. Ensure vim `shiftwidth=4` in markdown buffers.
+- **MD029 `"one"`** — ordered lists use lazy numbering (`1. 1. 1.`). bullets.vim auto-increments during editing; run `mdl -w README.md docs/**/*.md` to normalize before committing.
+- **MD013** disabled — long URLs and fenced code blocks do not need wrapping.
+
+When changing `README.md` or any file under `docs/`, run:
+
+```bash
+mdl README.md docs/**/*.md
+```
+
+Auto-fix ordered list numbering with:
+
+```bash
+mdl -w README.md docs/**/*.md
+```
 
 ## Documentation
 

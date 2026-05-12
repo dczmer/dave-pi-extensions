@@ -38,14 +38,15 @@ When plan mode is active, the context bar will show a visual indicator. When pla
 
 You can toggle plan mode with a hot-key:
 
-```
+```text
 Ctrl+Shift
 ```
+
 (Temporary mapping; will probably make an option, if possible).
 
 Or with a slash-command from within `pi`:
 
-```
+```text
 /plan
 ```
 

@@ -7,7 +7,8 @@
     "npx prettier*",
     "npx ts-node *",
     "npx tsx *",
-    "npx eslint*"
+    "npx eslint*",
+    "mdl*"
   ],
   "externalAllow": [
     "/nix*"

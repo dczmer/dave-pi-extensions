@@ -41,3 +41,15 @@ So this extension implements a simple handler to hook into tool calls to prevent
 ![plan-mode](./docs/images/plan-mode.png)
 
 [Read more here](./docs/extensions/plan-mode.md).
+
+## pi-gate
+
+TODO
+
+## rtk-bash-wrapper
+
+> NOTE: I'm going to replace this with [pi-rtk](https://github.com/mcowger/pi-rtk).
+
+## tmux-agents
+
+TODO
