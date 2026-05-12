@@ -2,9 +2,9 @@
  * Context Usage Progress Bar Extension
  *
  * Adds a visual progress bar to the footer showing context window usage
- * with percentage and max size. Extension statuses (e.g. plan mode)
- * appear on the right before the model info so toggling doesn't shift
- * the left side.
+ * with percentage and max size. The plan-mode indicator appears directly
+ * on the left of the progress bar. Other extension statuses go on the
+ * right before the model info.
  */
 
 import type { ExtensionAPI, ExtensionContext } from '@mariozechner/pi-coding-agent';
@@ -55,7 +55,12 @@ function installFooter(ctx: ExtensionContext) {
         const usage = ctx.getContextUsage();
         const model = ctx.model;
 
-        // --- Left side: context bar ---
+        // Pull plan-mode status to the left
+        const allStatuses = footerData.getExtensionStatuses();
+        const planStatus = allStatuses.get('plan-mode');
+        const otherStatuses = [...allStatuses.entries()].filter(([k]) => k !== 'plan-mode').map(([, v]) => v);
+
+        // --- Left side: plan status + context bar ---
         let contextSection = '';
         if (usage && model?.contextWindow) {
           const used = usage.tokens ?? 0;
@@ -71,9 +76,12 @@ function installFooter(ctx: ExtensionContext) {
           )}`;
         }
 
-        // --- Right side: extension statuses + model info ---
-        const statuses = [...footerData.getExtensionStatuses().values()];
-        const statusPrefix = statuses.length > 0 ? statuses.join(' ') + '  ' : '';
+        if (planStatus) {
+          contextSection = planStatus + (contextSection ? '  ' + contextSection : '');
+        }
+
+        // --- Right side: other extension statuses + model info ---
+        const statusPrefix = otherStatuses.length > 0 ? otherStatuses.join(' ') + '  ' : '';
 
         const branch = footerData.getGitBranch();
         const modelId = model?.id || 'no-model';
