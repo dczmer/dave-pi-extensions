@@ -50,6 +50,129 @@ export function classifyPath(filePath: string, cwd: string): 'project' | 'extern
   return 'external';
 }
 
+function consumeWhile(
+  command: string,
+  start: number,
+  predicate: (ch: string) => boolean
+): { token: string; newI: number } {
+  let j = start;
+  while (j < command.length && predicate(command[j]!)) {
+    j++;
+  }
+  return { token: command.slice(start, j), newI: j };
+}
+
+function extractSingleQuote(command: string, start: number): { token: string; newI: number } {
+  let j = start + 1;
+  while (j < command.length && command[j] !== "'") {
+    j++;
+  }
+  return { token: command.slice(start, j + 1), newI: j + 1 };
+}
+
+function extractQuoteWithEscapes(
+  command: string,
+  start: number,
+  contentStart: number,
+  closeChar: string
+): { token: string; newI: number } {
+  let j = contentStart;
+  while (j < command.length && command[j] !== closeChar) {
+    if (command[j] === '\\') {
+      j += 2;
+    } else {
+      j++;
+    }
+  }
+  return { token: command.slice(start, j + 1), newI: j + 1 };
+}
+
+function skipBalancedParens(
+  command: string,
+  start: number,
+  isOpen: (cmd: string, index: number) => boolean
+): number {
+  let depth = 1;
+  let j = start;
+  while (j < command.length && depth > 0) {
+    if (isOpen(command, j)) {
+      depth++;
+    } else if (command[j] === ')') {
+      depth--;
+    }
+    j++;
+  }
+  return j;
+}
+
+function skipBacktick(command: string, start: number): number {
+  let j = start + 1;
+  while (j < command.length && command[j] !== '`') {
+    if (command[j] === '\\') {
+      j += 2;
+    } else {
+      j++;
+    }
+  }
+  return j + 1;
+}
+
+function skipHeredoc(command: string, start: number): { token: string; newI: number } {
+  let j = start + 2;
+  if (j < command.length && command[j] === '-') {
+    j++;
+  }
+  while (j < command.length && /\s/.test(command[j]!) && command[j]! !== '\n') {
+    j++;
+  }
+  let delimiter = '';
+  if (j < command.length && command[j] === "'") {
+    j++;
+    while (j < command.length && command[j] !== "'") {
+      delimiter += command[j];
+      j++;
+    }
+    if (j < command.length) j++;
+  } else if (j < command.length && command[j] === '"') {
+    j++;
+    while (j < command.length && command[j] !== '"') {
+      if (command[j] === '\\') {
+        delimiter += command[j + 1] || '';
+        j += 2;
+      } else {
+        delimiter += command[j];
+        j++;
+      }
+    }
+    if (j < command.length) j++;
+  } else {
+    while (j < command.length && !/\s/.test(command[j]!)) {
+      delimiter += command[j]!;
+      j++;
+    }
+  }
+  const token = command.slice(start, j);
+  let i = j;
+  while (i < command.length) {
+    const atLineStart = i === 0 || command[i - 1] === '\n';
+    if (atLineStart) {
+      let k = i;
+      while (k < command.length && command[k] === '\t') {
+        k++;
+      }
+      if (command.slice(k, k + delimiter.length) === delimiter) {
+        const afterDelimiter = k + delimiter.length;
+        if (afterDelimiter >= command.length || /\s/.test(command[afterDelimiter] || '')) {
+          i = afterDelimiter;
+          break;
+        }
+      }
+    }
+    i++;
+  }
+  return { token, newI: i };
+}
+
 /**
  * Tokenize a bash command string and extract positional arguments that look
  * like file paths.  Respects quoting (single, double, ANSI-C), skips heredocs,
@@ -64,184 +187,60 @@ export function extractPathsFromCommand(command: string): string[] {
   const tokens: string[] = [];
   let i = 0;
 
-  // First pass: tokenize respecting quotes and substitutions
   while (i < command.length) {
     const char = command[i]!;
+    const next = command[i + 1];
 
-    // Skip leading whitespace
-    if (/\s/.test(char)) {
-      i++;
-      continue;
-    }
-
-    // Handle single-quoted strings (no escapes)
-    if (char === "'") {
-      let j = i + 1;
-      while (j < command.length && command[j] !== "'") {
-        j++;
-      }
-      tokens.push(command.slice(i, j + 1));
-      i = j + 1;
-      continue;
-    }
-
-    // Handle double-quoted strings (with escapes)
-    if (char === '"') {
-      let j = i + 1;
-      while (j < command.length && command[j] !== '"') {
-        if (command[j] === '\\') {
-          j += 2;
-        } else {
-          j++;
-        }
-      }
-      tokens.push(command.slice(i, j + 1));
-      i = j + 1;
-      continue;
-    }
-
-    // Handle ANSI-C quoted strings $'...'
-    if (char === '$' && command[i + 1] === "'") {
-      let j = i + 2;
-      while (j < command.length && command[j] !== "'") {
-        if (command[j] === '\\') {
-          j += 2;
-        } else {
-          j++;
-        }
-      }
-      tokens.push(command.slice(i, j + 1));
-      i = j + 1;
-      continue;
-    }
-
-    // Handle command substitution $()
-    if (char === '$' && command[i + 1] === '(') {
-      let depth = 1;
-      let j = i + 2;
-      while (j < command.length && depth > 0) {
-        if (command[j] === '(' && command[j - 1] === '$') {
-          depth++;
-        } else if (command[j] === ')') {
-          depth--;
-        }
-        j++;
-      }
-      // Skip command substitution entirely - paths inside are not direct args
-      i = j;
-      continue;
-    }
-
-    // Handle backtick command substitution ``
-    if (char === '`') {
-      let j = i + 1;
-      while (j < command.length && command[j] !== '`') {
-        if (command[j] === '\\') {
-          j += 2;
-        } else {
-          j++;
-        }
-      }
-      // Skip backtick substitution entirely
-      i = j + 1;
-      continue;
-    }
-
-    // Handle heredocs - skip them entirely
-    if (char === '<' && command[i + 1] === '<') {
-      let j = i + 2;
-      if (j < command.length && command[j] === '-') {
-        j++;
-      }
-      while (j < command.length && /\s/.test(command[j]!) && command[j]! !== '\n') {
-        j++;
-      }
-      // Parse delimiter
-      let delimiter = '';
-      if (j < command.length && command[j] === "'") {
-        j++;
-        while (j < command.length && command[j] !== "'") {
-          delimiter += command[j];
-          j++;
-        }
-        if (j < command.length) j++;
-      } else if (j < command.length && command[j] === '"') {
-        j++;
-        while (j < command.length && command[j] !== '"') {
-          if (command[j] === '\\') {
-            delimiter += command[j + 1] || '';
-            j += 2;
-          } else {
-            delimiter += command[j];
-            j++;
-          }
-        }
-        if (j < command.length) j++;
-      } else {
-        while (j < command.length && !/\s/.test(command[j]!)) {
-          delimiter += command[j]!;
-          j++;
-        }
-      }
-      // Include heredoc operator token
-      tokens.push(command.slice(i, j));
-      i = j;
-      // Skip heredoc body
-      while (i < command.length) {
-        const atLineStart = i === 0 || command[i - 1] === '\n';
-        if (atLineStart) {
-          let k = i;
-          while (k < command.length && command[k] === '\t') {
-            k++;
-          }
-          if (command.slice(k, k + delimiter.length) === delimiter) {
-            const afterDelimiter = k + delimiter.length;
-            if (afterDelimiter >= command.length || /\s/.test(command[afterDelimiter] || '')) {
-              i = afterDelimiter;
-              break;
-            }
-          }
-        }
+    switch (true) {
+      case /\s/.test(char):
         i++;
+        break;
+      case char === "'": {
+        const { token, newI } = extractSingleQuote(command, i);
+        tokens.push(token);
+        i = newI;
+        break;
       }
-      continue;
-    }
-
-    // Handle process substitution <() >()
-    if ((char === '<' || char === '>') && command[i + 1] === '(') {
-      let depth = 1;
-      let j = i + 2;
-      while (j < command.length && depth > 0) {
-        if (command[j] === '(') {
-          depth++;
-        } else if (command[j] === ')') {
-          depth--;
-        }
-        j++;
+      case char === '"': {
+        const { token, newI } = extractQuoteWithEscapes(command, i, i + 1, '"');
+        tokens.push(token);
+        i = newI;
+        break;
       }
-      // Skip process substitution
-      i = j;
-      continue;
-    }
-
-    // Handle redirections
-    if (/[<>]/.test(char)) {
-      let j = i;
-      while (j < command.length && /[<>0-9]/.test(command[j]!)) {
-        j++;
+      case char === '$' && next === "'": {
+        const { token, newI } = extractQuoteWithEscapes(command, i, i + 2, "'");
+        tokens.push(token);
+        i = newI;
+        break;
       }
-      tokens.push(command.slice(i, j));
-      i = j;
-      continue;
+      case char === '$' && next === '(':
+        i = skipBalancedParens(command, i + 2, (cmd, idx) => cmd[idx] === '(' && cmd[idx - 1] === '$');
+        break;
+      case char === '`':
+        i = skipBacktick(command, i);
+        break;
+      case char === '<' && next === '<': {
+        const { token, newI } = skipHeredoc(command, i);
+        tokens.push(token);
+        i = newI;
+        break;
+      }
+      case (char === '<' || char === '>') && next === '(':
+        i = skipBalancedParens(command, i + 2, (cmd, idx) => cmd[idx] === '(');
+        break;
+      case /[<>]/.test(char): {
+        const { token, newI } = consumeWhile(command, i, (ch) => /[<>0-9]/.test(ch));
+        tokens.push(token);
+        i = newI;
+        break;
+      }
+      default: {
+        const { token, newI } = consumeWhile(command, i, (ch) => !/\s/.test(ch));
+        tokens.push(token);
+        i = newI;
+        break;
+      }
     }
-
-    // Handle unquoted word
-    let j = i;
-    while (j < command.length && !/\s/.test(command[j]!)) {
-      j++;
-    }
-    tokens.push(command.slice(i, j));
-    i = j;
   }
 
   if (tokens.length === 0) return [];
@@ -250,15 +249,10 @@ export function extractPathsFromCommand(command: string): string[] {
   const operators = new Set(['|', '||', '&', '&&', ';', '(', ')', '{', '}', '>', '>>', '<', '<<', '<<-']);
 
   for (const token of args) {
-    // Skip options
     if (token.startsWith('-')) continue;
-    // Skip operators
     if (operators.has(token)) continue;
-    // Skip quoted strings (these are literals, not paths to check)
     if (token.startsWith("'") || token.startsWith('"') || token.startsWith("$'")) continue;
-    // Skip command substitutions and process substitutions
     if (token.startsWith('$(') || token.startsWith('`') || token.startsWith('<(') || token.startsWith('>(')) continue;
-    // This might be a path
     paths.push(token);
   }
 
