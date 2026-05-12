@@ -8,7 +8,7 @@ import { checkFileAccess } from './file-access.ts';
  *
  * Hooks into `tool_call` events to intercept `bash`, `read`, `write`,
  * `edit`, `grep`, and `find` tool invocations.  Project paths are allowed
- * unless they match a `projectDeny` pattern; external paths and new bash
+ * by default; external paths and new bash
  * commands require explicit user approval during the session.
  */
 export default function (pi: ExtensionAPI) {

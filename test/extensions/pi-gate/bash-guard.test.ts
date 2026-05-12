@@ -41,7 +41,6 @@ function createConfigResult(overrides?: Partial<ConfigResult>): ConfigResult {
   const empty = () => ({
     bashAllow: [] as string[],
     externalAllow: [] as string[],
-    projectDeny: [] as string[],
   });
   return {
     merged: { ...empty(), ...(overrides?.merged || {}) },
@@ -55,9 +54,9 @@ function createConfigResult(overrides?: Partial<ConfigResult>): ConfigResult {
 
 test('command allowed by config bashAllow pattern', async () => {
   const configResult = createConfigResult({
-    merged: { bashAllow: ['ls *'], externalAllow: [], projectDeny: [] },
-    project: { bashAllow: ['ls *'], externalAllow: [], projectDeny: [] },
-    global: { bashAllow: [], externalAllow: [], projectDeny: [] },
+    merged: { bashAllow: ['ls *'], externalAllow: [] },
+    project: { bashAllow: ['ls *'], externalAllow: [] },
+    global: { bashAllow: [], externalAllow: [] },
   });
   const ctx = createMockCtx();
   const result = await checkBashCommand('ls -la', '/fake/cwd', configResult, ctx);
@@ -68,9 +67,9 @@ test('command allowed by session approved pattern', async () => {
   resetSessionState();
   approveBashPattern('cat *');
   const configResult = createConfigResult({
-    merged: { bashAllow: [], externalAllow: [], projectDeny: [] },
-    project: { bashAllow: [], externalAllow: [], projectDeny: [] },
-    global: { bashAllow: [], externalAllow: [], projectDeny: [] },
+    merged: { bashAllow: [], externalAllow: [] },
+    project: { bashAllow: [], externalAllow: [] },
+    global: { bashAllow: [], externalAllow: [] },
   });
   const ctx = createMockCtx();
   const result = await checkBashCommand('cat file.txt', '/fake/cwd', configResult, ctx);
@@ -79,9 +78,9 @@ test('command allowed by session approved pattern', async () => {
 
 test('command with project files all allowed', async () => {
   const configResult = createConfigResult({
-    merged: { bashAllow: ['cat *'], externalAllow: [], projectDeny: [] },
-    project: { bashAllow: ['cat *'], externalAllow: [], projectDeny: [] },
-    global: { bashAllow: [], externalAllow: [], projectDeny: [] },
+    merged: { bashAllow: ['cat *'], externalAllow: [] },
+    project: { bashAllow: ['cat *'], externalAllow: [] },
+    global: { bashAllow: [], externalAllow: [] },
   });
   const ctx = createMockCtx();
   const result = await checkBashCommand('cat main.ts', '/fake/cwd', configResult, ctx);
@@ -90,9 +89,9 @@ test('command with project files all allowed', async () => {
 
 test('command with external files all allowed', async () => {
   const configResult = createConfigResult({
-    merged: { bashAllow: ['cat *'], externalAllow: ['/tmp/*'], projectDeny: [] },
-    project: { bashAllow: ['cat *'], externalAllow: ['/tmp/*'], projectDeny: [] },
-    global: { bashAllow: [], externalAllow: [], projectDeny: [] },
+    merged: { bashAllow: ['cat *'], externalAllow: ['/tmp/*'] },
+    project: { bashAllow: ['cat *'], externalAllow: ['/tmp/*'] },
+    global: { bashAllow: [], externalAllow: [] },
   });
   const ctx = createMockCtx();
   const result = await checkBashCommand('cat /tmp/foo.txt', '/fake/cwd', configResult, ctx);
@@ -115,7 +114,7 @@ test('no match prompts user, allows, persists to project, recurses, succeeds', a
     deepStrictEqual(configResult.project.bashAllow, ['xyz-custom-cmd *']);
 
     const saved = JSON.parse(readFileSync(projectPath, 'utf-8'));
-    deepStrictEqual(saved, { bashAllow: ['xyz-custom-cmd *'], externalAllow: [], projectDeny: [] });
+    deepStrictEqual(saved, { bashAllow: ['xyz-custom-cmd *'], externalAllow: [] });
   });
 });
 
@@ -136,7 +135,7 @@ test('no match prompts user, allows, persists to global, recurses, succeeds', as
     deepStrictEqual(configResult.global.bashAllow, ['abc-global-test-cmd *']);
 
     const saved = JSON.parse(readFileSync(globalPath, 'utf-8'));
-    deepStrictEqual(saved, { bashAllow: ['abc-global-test-cmd *'], externalAllow: [], projectDeny: [] });
+    deepStrictEqual(saved, { bashAllow: ['abc-global-test-cmd *'], externalAllow: [] });
   });
 });
 
@@ -161,21 +160,6 @@ test('no match prompts user, allows, skips persist, recurses, succeeds', async (
   });
 });
 
-test('pattern matches but file access denies', async () => {
-  const configResult = createConfigResult({
-    merged: { bashAllow: ['cat *'], externalAllow: [], projectDeny: ['secret.txt'] },
-    project: { bashAllow: ['cat *'], externalAllow: [], projectDeny: ['secret.txt'] },
-    global: { bashAllow: [], externalAllow: [], projectDeny: [] },
-  });
-  const ctx = createMockCtx();
-  const result = await checkBashCommand('cat secret.txt', '/fake/cwd', configResult, ctx);
-  strictEqual(result, false);
-  strictEqual(
-    ctx._notifications.some((n) => n.message.includes('Blocked')),
-    true,
-  );
-});
-
 test('user denies command at prompt', async () => {
   const configResult = createConfigResult();
   const ctx = createMockCtx();
@@ -194,26 +178,11 @@ test('user allows command but clears pattern', async () => {
   strictEqual(result, false);
 });
 
-test('multiple files in command, one denied', async () => {
-  const configResult = createConfigResult({
-    merged: { bashAllow: ['cat *'], externalAllow: [], projectDeny: ['secret.txt'] },
-    project: { bashAllow: ['cat *'], externalAllow: [], projectDeny: ['secret.txt'] },
-    global: { bashAllow: [], externalAllow: [], projectDeny: [] },
-  });
-  const ctx = createMockCtx();
-  const result = await checkBashCommand('cat main.ts secret.txt', '/fake/cwd', configResult, ctx);
-  strictEqual(result, false);
-  strictEqual(
-    ctx._notifications.some((n) => n.message.includes('Blocked')),
-    true,
-  );
-});
-
 test('command with no file arguments', async () => {
   const configResult = createConfigResult({
-    merged: { bashAllow: ['ls *'], externalAllow: [], projectDeny: [] },
-    project: { bashAllow: ['ls *'], externalAllow: [], projectDeny: [] },
-    global: { bashAllow: [], externalAllow: [], projectDeny: [] },
+    merged: { bashAllow: ['ls *'], externalAllow: [] },
+    project: { bashAllow: ['ls *'], externalAllow: [] },
+    global: { bashAllow: [], externalAllow: [] },
   });
   const ctx = createMockCtx();
   const result = await checkBashCommand('ls -la', '/fake/cwd', configResult, ctx);
@@ -330,9 +299,9 @@ EOF`;
 
 test('compound command: all statements allowed', async () => {
   const configResult = createConfigResult({
-    merged: { bashAllow: ['cd *', 'ls *'], externalAllow: [], projectDeny: [] },
-    project: { bashAllow: ['cd *', 'ls *'], externalAllow: [], projectDeny: [] },
-    global: { bashAllow: [], externalAllow: [], projectDeny: [] },
+    merged: { bashAllow: ['cd *', 'ls *'], externalAllow: [] },
+    project: { bashAllow: ['cd *', 'ls *'], externalAllow: [] },
+    global: { bashAllow: [], externalAllow: [] },
   });
   const ctx = createMockCtx();
   const result = await checkBashCommand('cd subdir && ls -la', '/fake/cwd', configResult, ctx);
@@ -341,9 +310,9 @@ test('compound command: all statements allowed', async () => {
 
 test('compound command: one statement denied', async () => {
   const configResult = createConfigResult({
-    merged: { bashAllow: ['cd *'], externalAllow: [], projectDeny: [] },
-    project: { bashAllow: ['cd *'], externalAllow: [], projectDeny: [] },
-    global: { bashAllow: [], externalAllow: [], projectDeny: [] },
+    merged: { bashAllow: ['cd *'], externalAllow: [] },
+    project: { bashAllow: ['cd *'], externalAllow: [] },
+    global: { bashAllow: [], externalAllow: [] },
   });
   const ctx = createMockCtx();
 

@@ -6,7 +6,6 @@ import { homedir } from 'node:os';
 export interface PiGateConfig {
   bashAllow: string[];
   externalAllow: string[];
-  projectDeny: string[];
 }
 
 /** Result of loading and merging global + project configs. */
@@ -20,7 +19,7 @@ export interface ConfigResult {
 
 function isPiGateConfig(v: unknown): v is PiGateConfig {
   if (typeof v !== 'object' || v === null) return false;
-  const keys: (keyof PiGateConfig)[] = ['bashAllow', 'externalAllow', 'projectDeny'];
+  const keys: (keyof PiGateConfig)[] = ['bashAllow', 'externalAllow'];
   for (const key of keys) {
     if (!(key in v)) return false;
     const arr = (v as Record<string, unknown>)[key];
@@ -36,7 +35,6 @@ function createEmptyConfig(): PiGateConfig {
   return {
     bashAllow: [],
     externalAllow: [],
-    projectDeny: [],
   };
 }
 
@@ -85,7 +83,6 @@ function mergeConfigs(global: PiGateConfig, project: PiGateConfig): PiGateConfig
   return {
     bashAllow: [...global.bashAllow, ...project.bashAllow],
     externalAllow: [...global.externalAllow, ...project.externalAllow],
-    projectDeny: [...global.projectDeny, ...project.projectDeny],
   };
 }
 

@@ -81,7 +81,6 @@ function createConfigResult(overrides?: Partial<ConfigResult>): ConfigResult {
   const empty = () => ({
     bashAllow: [] as string[],
     externalAllow: [] as string[],
-    projectDeny: [] as string[],
   });
   return {
     merged: { ...empty(), ...(overrides?.merged || {}) },

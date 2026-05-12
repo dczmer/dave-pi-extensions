@@ -23,7 +23,6 @@ test('loadConfig returns merged config from project file', () => {
       JSON.stringify({
         bashAllow: ['ls *'],
         externalAllow: ['/tmp/*'],
-        projectDeny: ['*/secrets.json'],
       }),
     );
 
@@ -31,11 +30,9 @@ test('loadConfig returns merged config from project file', () => {
     // Project config should have the values we set
     deepStrictEqual(result.project.bashAllow, ['ls *']);
     deepStrictEqual(result.project.externalAllow, ['/tmp/*']);
-    deepStrictEqual(result.project.projectDeny, ['*/secrets.json']);
     // Merged should include project values (may also include global values)
     strictEqual(result.merged.bashAllow.includes('ls *'), true);
     strictEqual(result.merged.externalAllow.includes('/tmp/*'), true);
-    strictEqual(result.merged.projectDeny.includes('*/secrets.json'), true);
   });
 });
 
@@ -48,7 +45,6 @@ test('loadConfig merges global and project configs', () => {
       JSON.stringify({
         bashAllow: ['project-cmd *'],
         externalAllow: ['/project/*'],
-        projectDeny: ['project-secret'],
       }),
     );
 
@@ -56,11 +52,9 @@ test('loadConfig merges global and project configs', () => {
     // Project should have the values
     deepStrictEqual(result.project.bashAllow, ['project-cmd *']);
     deepStrictEqual(result.project.externalAllow, ['/project/*']);
-    deepStrictEqual(result.project.projectDeny, ['project-secret']);
     // Merged should include project config (may also include global values)
     strictEqual(result.merged.bashAllow.includes('project-cmd *'), true);
     strictEqual(result.merged.externalAllow.includes('/project/*'), true);
-    strictEqual(result.merged.projectDeny.includes('project-secret'), true);
   });
 });
 
@@ -70,7 +64,6 @@ test('loadConfig returns empty project config when project file missing', () => 
     // Project should be empty when no project file exists
     deepStrictEqual(result.project.bashAllow, []);
     deepStrictEqual(result.project.externalAllow, []);
-    deepStrictEqual(result.project.projectDeny, []);
   });
 });
 
@@ -84,7 +77,6 @@ test('loadConfig handles empty project file', () => {
     // Project should be empty when file is empty
     deepStrictEqual(result.project.bashAllow, []);
     deepStrictEqual(result.project.externalAllow, []);
-    deepStrictEqual(result.project.projectDeny, []);
   });
 });
 
@@ -97,13 +89,11 @@ test('saveConfig and reload roundtrip preserves data', () => {
     const original: PiGateConfig = {
       bashAllow: ['cat *'],
       externalAllow: ['/etc/*'],
-      projectDeny: ['*.key'],
     };
     saveConfig(original, configPath);
     const result = loadConfig(dir);
     deepStrictEqual(result.project.bashAllow, ['cat *']);
     deepStrictEqual(result.project.externalAllow, ['/etc/*']);
-    deepStrictEqual(result.project.projectDeny, ['*.key']);
   });
 });
 
@@ -154,7 +144,7 @@ test('save creates parent directories if needed', () => {
   withTempDir((dir) => {
     const nested = join(dir, 'a', 'b', 'c');
     const configPath = join(nested, 'pi-gate.json');
-    const config: PiGateConfig = { bashAllow: [], externalAllow: [], projectDeny: [] };
+    const config: PiGateConfig = { bashAllow: [], externalAllow: [] };
     saveConfig(config, configPath);
     const stat = statSync(join(nested, 'pi-gate.json'));
     strictEqual(stat.isFile(), true);
@@ -167,7 +157,6 @@ test('atomic save operation (temp file + rename)', () => {
     const config: PiGateConfig = {
       bashAllow: ['ls'],
       externalAllow: [],
-      projectDeny: [],
     };
     saveConfig(config, configPath);
     const entries = readdirSync(dir);

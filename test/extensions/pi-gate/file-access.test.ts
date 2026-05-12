@@ -41,7 +41,6 @@ function createConfigResult(overrides?: Partial<ConfigResult>): ConfigResult {
   const empty = () => ({
     bashAllow: [] as string[],
     externalAllow: [] as string[],
-    projectDeny: [] as string[],
   });
   return {
     merged: { ...empty(), ...(overrides?.merged || {}) },
@@ -60,22 +59,11 @@ test('project file allowed with empty deny list', async () => {
   strictEqual(result, true);
 });
 
-test('project file allowed when not matching deny pattern', async () => {
-  const configResult = createConfigResult({
-    merged: { bashAllow: [], externalAllow: [], projectDeny: ['*.secret'] },
-    project: { bashAllow: [], externalAllow: [], projectDeny: ['*.secret'] },
-    global: { bashAllow: [], externalAllow: [], projectDeny: [] },
-  });
-  const ctx = createMockCtx();
-  const result = await checkFileAccess('src/main.ts', '/fake/cwd', configResult, ctx);
-  strictEqual(result, true);
-});
-
 test('external file allowed when in config externalAllow', async () => {
   const configResult = createConfigResult({
-    merged: { bashAllow: [], externalAllow: ['/tmp/*'], projectDeny: [] },
-    project: { bashAllow: [], externalAllow: ['/tmp/*'], projectDeny: [] },
-    global: { bashAllow: [], externalAllow: [], projectDeny: [] },
+    merged: { bashAllow: [], externalAllow: ['/tmp/*'] },
+    project: { bashAllow: [], externalAllow: ['/tmp/*'] },
+    global: { bashAllow: [], externalAllow: [] },
   });
   const ctx = createMockCtx();
   const result = await checkFileAccess('/tmp/foo.txt', '/fake/cwd', configResult, ctx);
@@ -107,7 +95,7 @@ test('external file approved by user and persisted to project config', async () 
     deepStrictEqual(configResult.project.externalAllow, ['/xyz-custom-path/*']);
 
     const saved = JSON.parse(readFileSync(projectPath, 'utf-8'));
-    deepStrictEqual(saved, { bashAllow: [], externalAllow: ['/xyz-custom-path/*'], projectDeny: [] });
+    deepStrictEqual(saved, { bashAllow: [], externalAllow: ['/xyz-custom-path/*'] });
   });
 });
 
@@ -128,7 +116,7 @@ test('external file approved by user and persisted to global config', async () =
     deepStrictEqual(configResult.global.externalAllow, ['/abc-global-test/*']);
 
     const saved = JSON.parse(readFileSync(globalPath, 'utf-8'));
-    deepStrictEqual(saved, { bashAllow: [], externalAllow: ['/abc-global-test/*'], projectDeny: [] });
+    deepStrictEqual(saved, { bashAllow: [], externalAllow: ['/abc-global-test/*'] });
   });
 });
 
@@ -152,30 +140,6 @@ test('external file approved by user but not persisted', async () => {
   });
 });
 
-test('project file blocked by exact deny pattern', async () => {
-  const configResult = createConfigResult({
-    merged: { bashAllow: [], externalAllow: [], projectDeny: ['secret.txt'] },
-    project: { bashAllow: [], externalAllow: [], projectDeny: ['secret.txt'] },
-    global: { bashAllow: [], externalAllow: [], projectDeny: [] },
-  });
-  const ctx = createMockCtx();
-  const result = await checkFileAccess('secret.txt', '/fake/cwd', configResult, ctx);
-  strictEqual(result, false);
-  strictEqual(ctx._notifications.length, 1);
-  strictEqual(ctx._notifications[0]!.level, 'warning');
-});
-
-test('project file blocked by glob deny pattern', async () => {
-  const configResult = createConfigResult({
-    merged: { bashAllow: [], externalAllow: [], projectDeny: ['*.secret'] },
-    project: { bashAllow: [], externalAllow: [], projectDeny: ['*.secret'] },
-    global: { bashAllow: [], externalAllow: [], projectDeny: [] },
-  });
-  const ctx = createMockCtx();
-  const result = await checkFileAccess('foo.secret', '/fake/cwd', configResult, ctx);
-  strictEqual(result, false);
-});
-
 test('external file denied by user at prompt', async () => {
   const configResult = createConfigResult();
   const ctx = createMockCtx();
@@ -190,10 +154,9 @@ test('merged config includes both global and project patterns', async () => {
     merged: {
       bashAllow: [],
       externalAllow: ['/global/*', '/project/*'],
-      projectDeny: [],
     },
-    global: { bashAllow: [], externalAllow: ['/global/*'], projectDeny: [] },
-    project: { bashAllow: [], externalAllow: ['/project/*'], projectDeny: [] },
+    global: { bashAllow: [], externalAllow: ['/global/*'] },
+    project: { bashAllow: [], externalAllow: ['/project/*'] },
   });
   const ctx = createMockCtx();
   const result = await checkFileAccess('/global/file.txt', '/fake/cwd', configResult, ctx);

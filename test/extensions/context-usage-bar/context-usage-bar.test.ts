@@ -37,10 +37,7 @@ test('renderProgressBar uses partial block for non-integer fills', () => {
   const theme = mockTheme();
   const result = renderProgressBar(37, 100, 10, theme);
   // 37% of 10 = 3.7, filledFull = 3, partial = floor(0.7*8)=5 -> BAR_CHARS[5]='▋'
-  strictEqual(
-    result,
-    '<border>[</border><success>███</success><success>▋</success>      <border>]</border>',
-  );
+  strictEqual(result, '<border>[</border><success>███</success><success>▋</success>      <border>]</border>');
 });
 
 test('renderProgressBar uses warning color at yellow threshold', () => {

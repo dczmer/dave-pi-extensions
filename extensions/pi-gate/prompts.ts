@@ -1,4 +1,4 @@
-export type ConfigSection = 'bashAllow' | 'externalAllow' | 'projectDeny';
+export type ConfigSection = 'bashAllow' | 'externalAllow';
 export type ConfigTarget = 'project' | 'global';
 
 export interface AddToConfigResult {
@@ -41,7 +41,7 @@ export async function promptPattern(
  * new allow/deny entry to.
  *
  * @param section - The config section being modified
- *                  (`"bashAllow"`, `"externalAllow"`, or `"projectDeny"`).
+ *                  (`"bashAllow"` or `"externalAllow"`).
  * @param ctx - Pi extension context providing UI primitives.
  * @param value - Optional value being saved (shown to the user for context).
  * @returns Object indicating whether to save and which config target to use.

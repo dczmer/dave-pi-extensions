@@ -8,9 +8,9 @@ Simply a customized status bar to show the things I want, and only those things.
 
 - Input and output token count.
 - Context usage progress bar:
-    - Green when <80K tokens in window ("smart zone")
-    - Yellow from 80K => 120K tokens (warning)
-    - Red above 120K tokens ("dumb zone")
+  - Green when <80K tokens in window ("smart zone")
+  - Yellow from 80K => 120K tokens (warning)
+  - Red above 120K tokens ("dumb zone")
 - Provider and model selection.
 - Current branch.
 

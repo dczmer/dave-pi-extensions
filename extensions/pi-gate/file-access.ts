@@ -9,8 +9,8 @@ import type { ExtensionContext } from './prompts.ts';
 /**
  * Determine whether a file-access tool call should be allowed.
  *
- * Project paths are checked against `projectDeny` patterns; external paths
- * must match an `externalAllow` pattern or receive explicit user approval.
+ * Project paths are allowed by default; external paths must match an
+ * `externalAllow` pattern or receive explicit user approval.
  * When the user approves an external path they are also prompted to persist a
  * glob pattern to the project or global config.
  *
@@ -28,15 +28,9 @@ export async function checkFileAccess(
 ): Promise<boolean> {
   const config = configResult.merged;
   const normalized = normalizePath(filePath, cwd);
-  const normalizedCwd = normalizePath(cwd, cwd);
   const classification = classifyPath(normalized, cwd);
 
   if (classification === 'project') {
-    const relativePath = normalized === normalizedCwd ? '.' : normalized.slice(normalizedCwd.length + 1);
-    if (matchesAnyGlob(relativePath, config.projectDeny)) {
-      ctx.ui.notify(`Blocked: ${filePath} matches projectDeny pattern`, 'warning');
-      return false;
-    }
     return true;
   } else {
     if (isExternalApproved(normalized)) return true;

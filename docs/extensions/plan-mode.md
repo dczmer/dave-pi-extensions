@@ -12,7 +12,7 @@ Simple "plan mode" implementation.
 - Blocks all tool calls and bash commands that would "make changes", while allowing read-only operations.
 - Augments the system prompt with instructions to operate in "plan mode" and to present the user with a detailed plan when they would normally take action, but plan mode is active. When plan mode is inactive, the changes are removed from the system prompt.
 - Visual indicator in the context bar.
-- Can be disabled/toggled with `/plan`.
+- Can be disabled/toggled with `/plan` or using a hot-key.
 - Can start `pi` with plan mode disabled using `--no-plan` flag.
 - Deterministic code with a very small system prompt change, vs. Claude Code which is 90% prompts with _multiple_ HUGE system prompts.
 
