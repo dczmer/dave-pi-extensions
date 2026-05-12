@@ -2,12 +2,12 @@
   "bashAllow": [
     "task*",
     "which tsc eslint",
-    "npx eslint*",
     "npm run*",
     "npx tsc *",
     "npx prettier*",
     "npx ts-node *",
-    "npx tsx *"
+    "npx tsx *",
+    "npx eslint*"
   ],
   "externalAllow": [
     "/nix*"
