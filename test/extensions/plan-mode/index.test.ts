@@ -84,3 +84,42 @@ test('augmentSystemPrompt: enabled appends planning prompt', () => {
   ok(result!.systemPrompt.includes('System'));
   ok(result!.systemPrompt.includes('PLANNING MODE ACTIVE'));
 });
+
+test('evaluateToolCall: allows write to plan artifact in plan mode', () => {
+  const result = evaluateToolCall(true, 'write', undefined, '.pi/artifacts/plan-20260512-abc123.md', '/project');
+  strictEqual(result, undefined);
+});
+
+test('evaluateToolCall: allows write to /tmp in plan mode', () => {
+  const result = evaluateToolCall(true, 'write', undefined, '/tmp/scratch.txt', '/project');
+  strictEqual(result, undefined);
+});
+
+test('evaluateToolCall: blocks write to bare plan.md in plan mode', () => {
+  const result = evaluateToolCall(true, 'write', undefined, '.pi/artifacts/plan.md', '/project');
+  strictEqual(result?.block, true);
+});
+
+test('evaluateToolCall: blocks write to src/index.ts in plan mode', () => {
+  const result = evaluateToolCall(true, 'write', undefined, 'src/index.ts', '/project');
+  strictEqual(result?.block, true);
+});
+
+test('evaluateToolCall: allows write to any path when plan mode is off', () => {
+  strictEqual(evaluateToolCall(false, 'write', undefined, 'src/index.ts', '/project'), undefined);
+  strictEqual(evaluateToolCall(false, 'write', undefined, '.pi/artifacts/plan.md', '/project'), undefined);
+});
+
+test('evaluateToolCall: allows mkdir under artifact dir in plan mode', () => {
+  strictEqual(evaluateToolCall(true, 'bash', 'mkdir -p .pi/artifacts', undefined, '/project'), undefined);
+});
+
+test('evaluateToolCall: blocks mkdir outside artifact dir in plan mode', () => {
+  const result = evaluateToolCall(true, 'bash', 'mkdir other', undefined, '/project');
+  strictEqual(result?.block, true);
+  ok(result!.reason.includes('mkdir'));
+});
+
+test('evaluateToolCall: allows mkdir outside artifact dir when plan mode is off', () => {
+  strictEqual(evaluateToolCall(false, 'bash', 'mkdir other', undefined, '/project'), undefined);
+});

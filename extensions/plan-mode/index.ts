@@ -8,9 +8,12 @@
  * to start a session without it.
  */
 
+import { mkdirSync } from 'node:fs';
+import { resolve } from 'node:path';
 import type { ExtensionAPI, ExtensionContext } from '@mariozechner/pi-coding-agent';
 import { Key } from '@mariozechner/pi-tui';
 import { isDestructiveCommand } from './bash-guard.ts';
+import { generatePlanSlug, isPlanArtifactPath, isTempPath } from './plan-artifact.ts';
 
 const BLOCK_REASON =
   'Blocked: Planning mode active. Present a plan instead — do not make changes. ' +
@@ -68,23 +71,30 @@ export function resolvePlanModeOnSessionStart(
  * @param planModeEnabled - Whether plan mode is currently active.
  * @param toolName - Name of the tool being invoked.
  * @param command - For `bash` tool, the command string (trimmed, if present).
+ * @param path - For `edit`/`write` tools, the target file path.
+ * @param cwd - Current working directory for path resolution.
  * @returns Block instruction if the call should be blocked, otherwise `undefined`.
  */
 export function evaluateToolCall(
   planModeEnabled: boolean,
   toolName: string,
   command?: string,
+  path?: string,
+  cwd?: string,
 ): { block: true; reason: string } | undefined {
   if (!planModeEnabled) {
     return undefined;
   }
 
   if (toolName === 'edit' || toolName === 'write') {
+    if (path && cwd && (isPlanArtifactPath(path, cwd) || isTempPath(path))) {
+      return undefined;
+    }
     return { block: true, reason: BLOCK_REASON };
   }
 
   if (toolName === 'bash' && command) {
-    const reason = isDestructiveCommand(command);
+    const reason = isDestructiveCommand(command, cwd);
     if (reason) {
       return { block: true, reason };
     }
@@ -128,15 +138,24 @@ export function augmentSystemPrompt(
  */
 export default function (pi: ExtensionAPI): void {
   let planModeEnabled = true;
+  let currentPlanSlug: string | undefined;
 
   function persist(): void {
     pi.appendEntry('plan-mode-state', { enabled: planModeEnabled });
+  }
+
+  function ensureArtifactsDir(cwd: string): void {
+    mkdirSync(resolve(cwd, '.pi', 'artifacts'), { recursive: true });
   }
 
   function toggle(ctx: ExtensionContext): void {
     planModeEnabled = !planModeEnabled;
     if (planModeEnabled) {
       ctx.ui.notify('Plan mode enabled — edit/write/bash blocked');
+      if (!currentPlanSlug) {
+        currentPlanSlug = generatePlanSlug();
+      }
+      ensureArtifactsDir(ctx.cwd);
     } else {
       ctx.ui.notify('Plan mode disabled — full access restored');
     }
@@ -164,9 +183,10 @@ export default function (pi: ExtensionAPI): void {
   });
 
   // Block destructive tool calls
-  pi.on('tool_call', async (event) => {
+  pi.on('tool_call', async (event, ctx) => {
     const command = (event.input as { command?: string }).command?.trim();
-    return evaluateToolCall(planModeEnabled, event.toolName, command);
+    const path = (event.input as { path?: string }).path;
+    return evaluateToolCall(planModeEnabled, event.toolName, command, path, ctx.cwd);
   });
 
   // Inject planning prompt into system prompt (ephemeral, per-turn).
@@ -187,6 +207,14 @@ export default function (pi: ExtensionAPI): void {
     const persistedEnabled = persisted?.data?.enabled;
 
     planModeEnabled = resolvePlanModeOnSessionStart(event.reason, noPlanFlag, persistedEnabled);
+
+    if (planModeEnabled) {
+      if (!currentPlanSlug) {
+        currentPlanSlug = generatePlanSlug();
+      }
+      ensureArtifactsDir(ctx.cwd);
+    }
+
     updateStatus(pi, planModeEnabled, ctx);
   });
 }

@@ -83,8 +83,44 @@ test('cp is blocked', () => {
   strictEqual(typeof result, 'string');
 });
 
-test('mkdir is blocked', () => {
+test('mkdir is blocked without cwd', () => {
   const result = isDestructiveCommand('mkdir newdir');
+  strictEqual(typeof result, 'string');
+});
+
+test('mkdir .pi/artifacts is allowed with cwd', () => {
+  strictEqual(isDestructiveCommand('mkdir .pi/artifacts', '/project'), null);
+});
+
+test('mkdir -p .pi/artifacts is allowed with cwd', () => {
+  strictEqual(isDestructiveCommand('mkdir -p .pi/artifacts', '/project'), null);
+});
+
+test('mkdir -p .pi/artifacts/subdir is allowed with cwd', () => {
+  strictEqual(isDestructiveCommand('mkdir -p .pi/artifacts/subdir', '/project'), null);
+});
+
+test('mkdir outside artifacts is blocked with cwd', () => {
+  const result = isDestructiveCommand('mkdir other', '/project');
+  strictEqual(typeof result, 'string');
+});
+
+test('mkdir with mixed targets is blocked', () => {
+  const result = isDestructiveCommand('mkdir .pi/artifacts other', '/project');
+  strictEqual(typeof result, 'string');
+});
+
+test('mkdir -m 755 .pi/artifacts is allowed', () => {
+  strictEqual(isDestructiveCommand('mkdir -m 755 .pi/artifacts', '/project'), null);
+});
+
+test('mkdir with no dirs is blocked', () => {
+  const result = isDestructiveCommand('mkdir', '/project');
+  strictEqual(typeof result, 'string');
+});
+
+test('mkdir .pi/artifacts without cwd is blocked', () => {
+  const result = isDestructiveCommand('mkdir .pi/artifacts');
   strictEqual(typeof result, 'string');
 });
 

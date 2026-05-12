@@ -12,6 +12,7 @@
 
 import { parseBashCommand, walkCommands } from '../../src/bash-parser.ts';
 import type { AstCommand, AstWord, AstRedirect } from '../../src/bash-parser.ts';
+import { isUnderArtifactDir } from './plan-artifact.ts';
 
 // ── Destructive commands (always block) ───────────────────────
 
@@ -24,7 +25,6 @@ const DESTRUCTIVE_COMMANDS = new Set([
   // File modification / creation
   'mv',
   'cp',
-  'mkdir',
   'touch',
   'ln',
   'install',
@@ -201,10 +201,11 @@ const WRITE_REDIRECTS = new Set([
  * - curl output flags (-o, -O, --output)
  *
  * @param command - The raw shell command string to inspect.
+ * @param cwd - Current working directory for path-aware exceptions.
  * @returns `null` if the command is safe, otherwise a human-readable
  *          reason string explaining why it was blocked.
  */
-export function isDestructiveCommand(command: string): string | null {
+export function isDestructiveCommand(command: string, cwd?: string): string | null {
   let ast;
   try {
     ast = parseBashCommand(command);
@@ -216,7 +217,7 @@ export function isDestructiveCommand(command: string): string | null {
 
   walkCommands(ast, (cmd) => {
     if (reason) return; // short-circuit after first block
-    reason = checkCommand(cmd);
+    reason = checkCommand(cmd, cwd);
   });
 
   return reason;
@@ -224,7 +225,7 @@ export function isDestructiveCommand(command: string): string | null {
 
 // ── Command checker ────────────────────────────────────────────
 
-function checkCommand(node: AstCommand): string | null {
+function checkCommand(node: AstCommand, cwd?: string): string | null {
   // Check write redirects (allow /dev/null)
   if (node.suffix) {
     for (const item of node.suffix) {
@@ -243,6 +244,17 @@ function checkCommand(node: AstCommand): string | null {
 
   const cmdName = node.name.text;
   const firstArg = getFirstArg(node);
+
+  // mkdir: allow only under artifact directory
+  if (cmdName === 'mkdir') {
+    if (cwd) {
+      const dirs = getDirArgs(node);
+      if (dirs.length > 0 && dirs.every((d) => isUnderArtifactDir(d, cwd))) {
+        return null;
+      }
+    }
+    return "Blocked: 'mkdir' can modify the system";
+  }
 
   // Always-block destructive commands
   if (DESTRUCTIVE_COMMANDS.has(cmdName)) {
@@ -319,6 +331,31 @@ function getFirstArg(node: AstCommand): string | undefined {
     if (item.type === 'Word') return (item as AstWord).text;
   }
   return undefined;
+}
+
+/** Extract non-flag directory arguments from a command node. */
+function getDirArgs(node: AstCommand): string[] {
+  if (!node.suffix) return [];
+  const dirs: string[] = [];
+  const argFlags = new Set(['-m', '-Z']);
+  let skipNext = false;
+  for (const item of node.suffix) {
+    if (item.type === 'Word') {
+      const text = (item as AstWord).text;
+      if (skipNext) {
+        skipNext = false;
+        continue;
+      }
+      if (text.startsWith('-')) {
+        if (argFlags.has(text)) {
+          skipNext = true;
+        }
+        continue;
+      }
+      dirs.push(text);
+    }
+  }
+  return dirs;
 }
 
 /** Extract the n-th Word argument (1-indexed, skipping redirects). */
