@@ -52,6 +52,50 @@ test('diff is safe', () => {
   strictEqual(isDestructiveCommand('diff a.txt b.txt'), null);
 });
 
+test('printenv is safe', () => {
+  strictEqual(isDestructiveCommand('printenv PATH'), null);
+});
+
+test('uname is safe', () => {
+  strictEqual(isDestructiveCommand('uname -a'), null);
+});
+
+test('whoami is safe', () => {
+  strictEqual(isDestructiveCommand('whoami'), null);
+});
+
+test('cut is safe', () => {
+  strictEqual(isDestructiveCommand('cut -d: -f1 /etc/passwd'), null);
+});
+
+test('df is safe', () => {
+  strictEqual(isDestructiveCommand('df -h'), null);
+});
+
+test('du is safe', () => {
+  strictEqual(isDestructiveCommand('du -sh .'), null);
+});
+
+test('stat is safe', () => {
+  strictEqual(isDestructiveCommand('stat file.txt'), null);
+});
+
+test('file is safe', () => {
+  strictEqual(isDestructiveCommand('file file.txt'), null);
+});
+
+test('nproc is safe', () => {
+  strictEqual(isDestructiveCommand('nproc'), null);
+});
+
+test('id is safe', () => {
+  strictEqual(isDestructiveCommand('id'), null);
+});
+
+test('groups is safe', () => {
+  strictEqual(isDestructiveCommand('groups'), null);
+});
+
 test('compound safe commands', () => {
   strictEqual(isDestructiveCommand('ls && echo hi'), null);
 });

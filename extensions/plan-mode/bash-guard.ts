@@ -16,6 +16,33 @@ import { isUnderArtifactDir } from './plan-artifact.ts';
 
 // ── Destructive commands (always block) ───────────────────────
 
+const SAFE_COMMANDS = new Set([
+  'ls',
+  'cat',
+  'head',
+  'tail',
+  'find',
+  'grep',
+  'pwd',
+  'echo',
+  'printenv',
+  'uname',
+  'whoami',
+  'wc',
+  'sort',
+  'uniq',
+  'diff',
+  'cd',
+  'cut',
+  'df',
+  'du',
+  'stat',
+  'file',
+  'nproc',
+  'id',
+  'groups',
+]);
+
 const DESTRUCTIVE_COMMANDS = new Set([
   // File deletion
   'rm',
@@ -254,6 +281,11 @@ function checkCommand(node: AstCommand, cwd?: string): string | null {
       }
     }
     return "Blocked: 'mkdir' can modify the system";
+  }
+
+  // Explicitly safe commands (read-only inspection / text processing)
+  if (SAFE_COMMANDS.has(cmdName)) {
+    return null;
   }
 
   // Always-block destructive commands
