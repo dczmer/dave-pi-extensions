@@ -80,9 +80,65 @@ test('augmentSystemPrompt: disabled returns undefined', () => {
 });
 
 test('augmentSystemPrompt: enabled appends planning prompt', () => {
-  const result = augmentSystemPrompt(true, 'System');
+  const result = augmentSystemPrompt(true, 'System', '/project/.pi/artifacts/plan-20260512-abc123.md');
   ok(result!.systemPrompt.includes('System'));
   ok(result!.systemPrompt.includes('PLANNING MODE ACTIVE'));
+});
+
+test('augmentSystemPrompt: includes exact plan file path', () => {
+  const result = augmentSystemPrompt(true, 'System', '/project/.pi/artifacts/plan-20260512-abc123.md');
+  ok(result!.systemPrompt.includes('/project/.pi/artifacts/plan-20260512-abc123.md'));
+});
+
+test('augmentSystemPrompt: includes software architect framing', () => {
+  const result = augmentSystemPrompt(true, 'System', '/project/.pi/artifacts/plan-20260512-abc123.md');
+  ok(result!.systemPrompt.includes('software architect'));
+});
+
+test('augmentSystemPrompt: lists safe commands', () => {
+  const result = augmentSystemPrompt(true, 'System', '/project/.pi/artifacts/plan-20260512-abc123.md');
+  ok(result!.systemPrompt.includes('ls'));
+  ok(result!.systemPrompt.includes('git status'));
+  ok(result!.systemPrompt.includes('git log'));
+});
+
+test('augmentSystemPrompt: lists blocked commands', () => {
+  const result = augmentSystemPrompt(true, 'System', '/project/.pi/artifacts/plan-20260512-abc123.md');
+  ok(result!.systemPrompt.includes('rm'));
+  ok(result!.systemPrompt.includes('npm'));
+  ok(result!.systemPrompt.includes('docker'));
+});
+
+test('augmentSystemPrompt: mentions /tmp allowance', () => {
+  const result = augmentSystemPrompt(true, 'System', '/project/.pi/artifacts/plan-20260512-abc123.md');
+  ok(result!.systemPrompt.includes('/tmp/'));
+});
+
+test('augmentSystemPrompt: mentions mkdir exception', () => {
+  const result = augmentSystemPrompt(true, 'System', '/project/.pi/artifacts/plan-20260512-abc123.md');
+  ok(result!.systemPrompt.includes('mkdir'));
+  ok(result!.systemPrompt.includes('.pi/artifacts'));
+});
+
+test('augmentSystemPrompt: includes mermaid/ascii mention', () => {
+  const result = augmentSystemPrompt(true, 'System', '/project/.pi/artifacts/plan-20260512-abc123.md');
+  ok(result!.systemPrompt.includes('mermaid'));
+});
+
+test('augmentSystemPrompt: includes supersede clause', () => {
+  const result = augmentSystemPrompt(true, 'System', '/project/.pi/artifacts/plan-20260512-abc123.md');
+  ok(result!.systemPrompt.includes('supersede'));
+});
+
+test('augmentSystemPrompt: includes re-entry instruction', () => {
+  const result = augmentSystemPrompt(true, 'System', '/project/.pi/artifacts/plan-20260512-abc123.md');
+  ok(result!.systemPrompt.includes('already exists'));
+  ok(result!.systemPrompt.includes('read it first'));
+});
+
+test('augmentSystemPrompt: omits plan path when not provided', () => {
+  const result = augmentSystemPrompt(true, 'System');
+  ok(result!.systemPrompt.includes('.pi/artifacts/plan-<slug>.md'));
 });
 
 test('evaluateToolCall: allows write to plan artifact in plan mode', () => {

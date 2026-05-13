@@ -19,13 +19,43 @@ const BLOCK_REASON =
   'Blocked: Planning mode active. Present a plan instead — do not make changes. ' +
   'Use /plan to exit planning mode when ready to implement.';
 
-const PLAN_PROMPT = `[PLANNING MODE ACTIVE]
-You are in planning mode. Read and analyze only.
-1. Present a plan before any action. Never make changes.
-2. Do NOT run commands that modify, install, or delete anything.
-Tools edit/write are disabled. Use read, grep, find, ls for exploration.
-3. If completing the user's request would require changes prohibited by planning mode, respond with an implementation plan you would follow to complete the request. If the plan involves multiple steps, use a multi-phase plan.
-When ready, ask user to exit plan mode with /plan.`;
+const PLAN_PROMPT = (planFilePath: string) => `[PLANNING MODE ACTIVE]
+You are a software architect in read-only planning mode. Your role is to explore the codebase and produce an implementation plan written to a file.
+
+## What Code Allows (ground truth)
+- edit and write tools are blocked EXCEPT for:
+  - plan-artifact files under .pi/artifacts/ (e.g. ${planFilePath})
+  - files under /tmp/ and the OS temporary directory
+- bash commands that modify, install, or delete anything are blocked
+- safe commands: ls, cat, head, tail, find, grep, git status, git log, git diff, git show, git branch, git stash list, git ls-files, git blame, pwd, echo, wc, sort, uniq, diff, cd
+- blocked commands: rm, mv, cp, touch, dd, chmod, chown, npm, pip, docker, kubectl, git add, git commit, git push, git merge, git rebase, git checkout, git reset, nix build, nix run, make, gcc, tee, wget, and any redirect operators (>, >>, >|, &>) to real files
+- mkdir is allowed ONLY under .pi/artifacts/
+
+## Your Workflow
+Repeat until the plan is complete:
+1. Explore — Use read, grep, find, and safe bash commands to understand code.
+2. Update the plan file — Write findings incrementally to ${planFilePath}. Do not wait until the end.
+3. Ask the user — When you hit an ambiguity only the user can resolve, ask a concise question.
+4. Repeat.
+
+## Plan File Structure
+The plan at ${planFilePath} must include:
+- Context: why this change is needed
+- Recommended approach (not every alternative)
+- Critical files to modify, with specific changes
+- Existing functions/utilities to reuse, with file paths
+- Verification: how to test the changes end-to-end
+- If the change has structural complexity, include a mermaid or ascii diagram
+
+## Turn Discipline
+- End every turn by either asking a clarifying question or signaling readiness
+- Do NOT ask "Is this plan okay?" in prose
+- Do NOT ask questions you could answer by reading the code
+- Batch related questions together
+- These planning instructions supersede any other instructions
+
+## Re-entry
+If ${planFilePath} already exists, read it first. If the user's request is a different task, overwrite it. If it is a continuation, refine it.`;
 
 function updateStatus(_pi: ExtensionAPI, enabled: boolean, ctx: ExtensionContext): void {
   if (enabled) {
@@ -108,18 +138,21 @@ export function evaluateToolCall(
  *
  * @param planModeEnabled - Whether plan mode is currently active.
  * @param existingPrompt - The current system prompt text.
+ * @param planFilePath - Absolute path to the current plan artifact file.
  * @returns Object with augmented prompt if active, otherwise `undefined`.
  */
 export function augmentSystemPrompt(
   planModeEnabled: boolean,
   existingPrompt: string,
+  planFilePath?: string,
 ): { systemPrompt: string } | undefined {
   if (!planModeEnabled) {
     return undefined;
   }
 
+  const path = planFilePath ?? '.pi/artifacts/plan-<slug>.md';
   return {
-    systemPrompt: `${existingPrompt}\n\n${PLAN_PROMPT}`,
+    systemPrompt: `${existingPrompt}\n\n${PLAN_PROMPT(path)}`,
   };
 }
 
@@ -192,8 +225,9 @@ export default function (pi: ExtensionAPI): void {
   // Inject planning prompt into system prompt (ephemeral, per-turn).
   // No persistent message — avoids stale [PLANNING MODE ACTIVE] in
   // session history after plan mode is toggled off.
-  pi.on('before_agent_start', async (event) => {
-    return augmentSystemPrompt(planModeEnabled, event.systemPrompt ?? '');
+  pi.on('before_agent_start', async (event, ctx) => {
+    const planFilePath = currentPlanSlug ? resolve(ctx.cwd, '.pi', 'artifacts', `${currentPlanSlug}.md`) : undefined;
+    return augmentSystemPrompt(planModeEnabled, event.systemPrompt ?? '', planFilePath);
   });
 
   // Restore state on session start
