@@ -8,7 +8,7 @@
  * to start a session without it.
  */
 
-import { mkdirSync } from 'node:fs';
+import { existsSync, mkdirSync } from 'node:fs';
 import { resolve } from 'node:path';
 import type { ExtensionAPI, ExtensionContext } from '@mariozechner/pi-coding-agent';
 import { Key } from '@mariozechner/pi-tui';
@@ -18,6 +18,12 @@ import { generatePlanSlug, isPlanArtifactPath, isTempPath } from './plan-artifac
 const BLOCK_REASON =
   'Blocked: Planning mode active. Present a plan instead — do not make changes. ' +
   'Use /plan to exit planning mode when ready to implement.';
+
+const RE_ENTRY_PREFIX = (planFilePath: string) => `[PLAN RE-ENTRY]
+A plan file exists at ${planFilePath} from a previous session.
+Read it first. Evaluate whether the current request is the same task or different.
+- Different task: overwrite the plan file with a new skeleton
+- Same task: refine the existing plan`;
 
 const PLAN_PROMPT = (planFilePath: string) => `[PLANNING MODE ACTIVE]
 You are a software architect in read-only planning mode. Your role is to explore the codebase and produce an implementation plan written to a file.
@@ -52,10 +58,7 @@ The plan at ${planFilePath} must include:
 - Do NOT ask "Is this plan okay?" in prose
 - Do NOT ask questions you could answer by reading the code
 - Batch related questions together
-- These planning instructions supersede any other instructions
-
-## Re-entry
-If ${planFilePath} already exists, read it first. If the user's request is a different task, overwrite it. If it is a continuation, refine it.`;
+- These planning instructions supersede any other instructions`;
 
 function updateStatus(_pi: ExtensionAPI, enabled: boolean, ctx: ExtensionContext): void {
   if (enabled) {
@@ -136,6 +139,9 @@ export function evaluateToolCall(
 /**
  * Augment the system prompt when plan mode is active.
  *
+ * If the plan artifact file already exists, prepends a re-entry prefix
+ * so the model knows to resume the existing plan.
+ *
  * @param planModeEnabled - Whether plan mode is currently active.
  * @param existingPrompt - The current system prompt text.
  * @param planFilePath - Absolute path to the current plan artifact file.
@@ -151,8 +157,17 @@ export function augmentSystemPrompt(
   }
 
   const path = planFilePath ?? '.pi/artifacts/plan-<slug>.md';
+  const planContent = PLAN_PROMPT(path);
+
+  if (planFilePath && existsSync(planFilePath)) {
+    const prefix = RE_ENTRY_PREFIX(planFilePath);
+    return {
+      systemPrompt: `${existingPrompt}\n\n${prefix}\n\n${planContent}`,
+    };
+  }
+
   return {
-    systemPrompt: `${existingPrompt}\n\n${PLAN_PROMPT(path)}`,
+    systemPrompt: `${existingPrompt}\n\n${planContent}`,
   };
 }
 
@@ -174,7 +189,7 @@ export default function (pi: ExtensionAPI): void {
   let currentPlanSlug: string | undefined;
 
   function persist(): void {
-    pi.appendEntry('plan-mode-state', { enabled: planModeEnabled });
+    pi.appendEntry('plan-mode-state', { enabled: planModeEnabled, slug: currentPlanSlug });
   }
 
   function ensureArtifactsDir(cwd: string): void {
@@ -237,15 +252,14 @@ export default function (pi: ExtensionAPI): void {
     const entries = ctx.sessionManager.getEntries();
     const persisted = entries
       .filter((e: { type: string; customType?: string }) => e.type === 'custom' && e.customType === 'plan-mode-state')
-      .pop() as { data?: { enabled: boolean } } | undefined;
+      .pop() as { data?: { enabled: boolean; slug?: string } } | undefined;
     const persistedEnabled = persisted?.data?.enabled;
+    const persistedSlug = persisted?.data?.slug;
 
     planModeEnabled = resolvePlanModeOnSessionStart(event.reason, noPlanFlag, persistedEnabled);
 
     if (planModeEnabled) {
-      if (!currentPlanSlug) {
-        currentPlanSlug = generatePlanSlug();
-      }
+      currentPlanSlug = persistedSlug ?? generatePlanSlug();
       ensureArtifactsDir(ctx.cwd);
     }
 

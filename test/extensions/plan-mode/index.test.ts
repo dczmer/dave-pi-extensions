@@ -1,10 +1,22 @@
 import { strictEqual, ok } from 'node:assert';
 import { test } from 'node:test';
+import { writeFileSync, mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import {
   resolvePlanModeOnSessionStart,
   evaluateToolCall,
   augmentSystemPrompt,
 } from '../../../extensions/plan-mode/index.ts';
+
+function withTempDir<T>(fn: (dir: string) => T): T {
+  const dir = mkdtempSync(join(tmpdir(), 'pi-plan-'));
+  try {
+    return fn(dir);
+  } finally {
+    rmSync(dir, { recursive: true });
+  }
+}
 
 test('resolvePlanModeOnSessionStart: startup with default flag and no persisted state', () => {
   strictEqual(resolvePlanModeOnSessionStart('startup', false, undefined), true);
@@ -130,15 +142,30 @@ test('augmentSystemPrompt: includes supersede clause', () => {
   ok(result!.systemPrompt.includes('supersede'));
 });
 
-test('augmentSystemPrompt: includes re-entry instruction', () => {
-  const result = augmentSystemPrompt(true, 'System', '/project/.pi/artifacts/plan-20260512-abc123.md');
-  ok(result!.systemPrompt.includes('already exists'));
-  ok(result!.systemPrompt.includes('read it first'));
+test('augmentSystemPrompt: injects re-entry prefix when plan file exists', () => {
+  withTempDir((dir) => {
+    const planPath = join(dir, 'plan-20260513-abc123.md');
+    writeFileSync(planPath, '# Existing plan');
+    const result = augmentSystemPrompt(true, 'System', planPath);
+    ok(result!.systemPrompt.includes('[PLAN RE-ENTRY]'));
+    ok(result!.systemPrompt.includes('plan-20260513-abc123.md'));
+    ok(result!.systemPrompt.includes('same task'));
+  });
+});
+
+test('augmentSystemPrompt: omits re-entry prefix when plan file does not exist', () => {
+  withTempDir((dir) => {
+    const planPath = join(dir, 'plan-20260513-abc123.md');
+    const result = augmentSystemPrompt(true, 'System', planPath);
+    strictEqual(result!.systemPrompt.includes('[PLAN RE-ENTRY]'), false);
+    ok(result!.systemPrompt.includes('PLANNING MODE ACTIVE'));
+  });
 });
 
 test('augmentSystemPrompt: omits plan path when not provided', () => {
   const result = augmentSystemPrompt(true, 'System');
   ok(result!.systemPrompt.includes('.pi/artifacts/plan-<slug>.md'));
+  strictEqual(result!.systemPrompt.includes('[PLAN RE-ENTRY]'), false);
 });
 
 test('evaluateToolCall: allows write to plan artifact in plan mode', () => {
