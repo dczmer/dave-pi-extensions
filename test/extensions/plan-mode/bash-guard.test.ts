@@ -1,6 +1,6 @@
 import { strictEqual } from 'node:assert';
 import { test } from 'node:test';
-import { isDestructiveCommand } from '../../../extensions/plan-mode/bash-guard.ts';
+import { isDestructiveCommand, PARSE_FAILURE_REASON } from '../../../extensions/plan-mode/bash-guard.ts';
 
 // ── Safe commands (should return null) ─────────────────────────
 
@@ -515,20 +515,19 @@ test('curl --output is blocked', () => {
 test('garbage input is blocked', () => {
   // Unclosed quote causes bash-parser to throw
   const result = isDestructiveCommand("'");
-  strictEqual(typeof result, 'string');
-  strictEqual(result!.includes('parse'), true);
+  strictEqual(result, PARSE_FAILURE_REASON);
 });
 
 // ── Edge cases ────────────────────────────────────────────────
 
 test('empty command is blocked (parse failure)', () => {
   const result = isDestructiveCommand('');
-  strictEqual(typeof result, 'string');
+  strictEqual(result, PARSE_FAILURE_REASON);
 });
 
 test('whitespace-only command is blocked (parse failure)', () => {
   const result = isDestructiveCommand('   ');
-  strictEqual(typeof result, 'string');
+  strictEqual(result, PARSE_FAILURE_REASON);
 });
 
 test('assignment-only command is not destructive itself', () => {

@@ -10,6 +10,7 @@ import { resetSessionState, approveBashPattern } from '../../../extensions/pi-ga
 function createMockCtx() {
   const editorQueue: (string | null)[] = [];
   const selectQueue: (string | null)[] = [];
+  const confirmQueue: boolean[] = [];
   const notifications: Array<{ message: string; level: string }> = [];
 
   const ctx = {
@@ -19,10 +20,12 @@ function createMockCtx() {
       notify: (message: string, level: string) => {
         notifications.push({ message, level });
       },
+      confirm: () => Promise.resolve(confirmQueue.shift() ?? false),
     },
     _notifications: notifications,
     queueEditor: (v: string | null) => editorQueue.push(v),
     queueSelect: (v: string | null) => selectQueue.push(v),
+    queueConfirm: (v: boolean) => confirmQueue.push(v),
   };
 
   return ctx as typeof ctx & Parameters<typeof checkBashCommand>[3];
@@ -318,4 +321,27 @@ test('compound command: one statement denied', async () => {
 
   const result = await checkBashCommand('cd /home && rm -rf /', '/fake/cwd', configResult, ctx);
   strictEqual(result, false);
+});
+
+test('unparsable command: user confirms allows', async () => {
+  const configResult = createConfigResult();
+  const ctx = createMockCtx();
+  ctx.queueConfirm(true);
+
+  const result = await checkBashCommand('echo $(echo $(whoami))', '/fake/cwd', configResult, ctx);
+  strictEqual(result, true);
+  strictEqual(ctx._notifications.length, 1);
+  strictEqual(ctx._notifications[0]!.message, 'Command not parsable — manual approval required');
+  strictEqual(ctx._notifications[0]!.level, 'warning');
+});
+
+test('unparsable command: user rejects blocks', async () => {
+  const configResult = createConfigResult();
+  const ctx = createMockCtx();
+  ctx.queueConfirm(false);
+
+  const result = await checkBashCommand("echo 'unclosed", '/fake/cwd', configResult, ctx);
+  strictEqual(result, false);
+  strictEqual(ctx._notifications.length, 1);
+  strictEqual(ctx._notifications[0]!.message, 'Command not parsable — manual approval required');
 });

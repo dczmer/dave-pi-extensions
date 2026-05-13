@@ -12,7 +12,7 @@ import { existsSync, mkdirSync, readFileSync, renameSync } from 'node:fs';
 import { resolve } from 'node:path';
 import type { ExtensionAPI, ExtensionContext } from '@mariozechner/pi-coding-agent';
 import { Key } from '@mariozechner/pi-tui';
-import { isDestructiveCommand } from './bash-guard.ts';
+import { isDestructiveCommand, PARSE_FAILURE_REASON } from './bash-guard.ts';
 import { generatePlanSlug, isPlanArtifactPath, isTempPath, extractTopicSlug } from './plan-artifact.ts';
 
 const BLOCK_REASON =
@@ -296,7 +296,18 @@ export default function (pi: ExtensionAPI): void {
   pi.on('tool_call', async (event, ctx) => {
     const command = (event.input as { command?: string }).command?.trim();
     const path = (event.input as { path?: string }).path;
-    return evaluateToolCall(planModeEnabled, event.toolName, command, path, ctx.cwd);
+    const result = evaluateToolCall(planModeEnabled, event.toolName, command, path, ctx.cwd);
+    if (result && result.reason === PARSE_FAILURE_REASON && command) {
+      ctx.ui.notify('Command not parsable — manual approval required', 'warning');
+      const allowed = await ctx.ui.confirm(
+        'plan-mode: unparsable command',
+        'Could not parse command. Allow anyway?\n\n' + command,
+      );
+      if (allowed) {
+        return undefined;
+      }
+    }
+    return result;
   });
 
   // Rename plan artifact to topic slug after first write

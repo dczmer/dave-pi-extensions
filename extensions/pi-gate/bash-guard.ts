@@ -202,8 +202,8 @@ export async function checkBashCommand(
 ): Promise<boolean> {
   const entries = parseStatementEntries(command);
   if (entries === null) {
-    ctx.ui.notify('Blocked: failed to parse command', 'warning');
-    return false;
+    ctx.ui.notify('Command not parsable — manual approval required', 'warning');
+    return ctx.ui.confirm('pi-gate: unparsable command', 'Could not parse command. Allow anyway?\n\n' + command);
   }
 
   for (const entry of entries) {

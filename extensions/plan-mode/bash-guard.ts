@@ -217,6 +217,9 @@ const WRITE_REDIRECTS = new Set([
 
 // ── Public API ─────────────────────────────────────────────────
 
+/** Sentinel reason returned when bash-parser fails to parse a command. */
+export const PARSE_FAILURE_REASON = 'Blocked: failed to parse command in plan mode';
+
 /**
  * Analyze a shell command and decide if it is destructive.
  *
@@ -237,7 +240,7 @@ export function isDestructiveCommand(command: string, cwd?: string): string | nu
   try {
     ast = parseBashCommand(command);
   } catch {
-    return 'Blocked: failed to parse command in plan mode';
+    return PARSE_FAILURE_REASON;
   }
 
   let reason: string | null = null;

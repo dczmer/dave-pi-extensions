@@ -9,17 +9,39 @@ import {
   augmentSystemPrompt,
   maybeRenamePlanArtifact,
 } from '../../../extensions/plan-mode/index.ts';
+import planModeExtension from '../../../extensions/plan-mode/index.ts';
+import { PARSE_FAILURE_REASON } from '../../../extensions/plan-mode/bash-guard.ts';
+import type { ExtensionAPI, ExtensionContext } from '@mariozechner/pi-coding-agent';
 
 function createMockCtx() {
-  const notifications: Array<{ message: string; type?: string }> = [];
-  return {
+  const notifications: Array<{ message: string; type?: string | undefined }> = [];
+  const confirmQueue: boolean[] = [];
+  const ctx = {
     ui: {
       notify: (message: string, type?: string) => {
         notifications.push({ message, type });
       },
+      confirm: () => Promise.resolve(confirmQueue.shift() ?? false),
     },
     _notifications: notifications,
-  } as typeof notifications & { ui: { notify: (message: string, type?: string) => void } } & Parameters<typeof maybeRenamePlanArtifact>[4];
+    queueConfirm: (v: boolean) => confirmQueue.push(v),
+  };
+  return ctx as typeof ctx & Parameters<typeof maybeRenamePlanArtifact>[4];
+}
+
+function createMockPi() {
+  const handlers: Record<string, Array<(event: unknown, ctx: unknown) => Promise<unknown>>> = {};
+  const pi = {
+    registerFlag: () => {},
+    registerCommand: () => {},
+    registerShortcut: () => {},
+    getFlag: () => false,
+    on: (event: string, handler: (event: unknown, ctx: unknown) => Promise<unknown>) => {
+      (handlers[event] ??= []).push(handler);
+    },
+    appendEntry: () => {},
+  };
+  return { pi: pi as unknown as ExtensionAPI, handlers };
 }
 
 function withTempDir<T>(fn: (dir: string) => T): T {
@@ -336,4 +358,51 @@ test('maybeRenamePlanArtifact: ignores when currentPlanSlug undefined', () => {
     );
     strictEqual(result, undefined);
   });
+});
+
+test('tool_call handler: parse failure with user confirm allows', async () => {
+  const { pi, handlers } = createMockPi();
+  planModeExtension(pi);
+  const handler = handlers['tool_call']?.[0];
+  if (!handler) throw new Error('tool_call handler not registered');
+  const ctx = createMockCtx();
+  ctx.queueConfirm(true);
+  const result = await handler({ toolName: 'bash', input: { command: "echo 'unclosed" } }, {
+    ...ctx,
+    cwd: '/project',
+  } as ExtensionContext);
+  strictEqual(result, undefined);
+  strictEqual(ctx._notifications.length, 1);
+  strictEqual(ctx._notifications[0]!.message, 'Command not parsable — manual approval required');
+  strictEqual(ctx._notifications[0]!.type, 'warning');
+});
+
+test('tool_call handler: parse failure with user reject blocks', async () => {
+  const { pi, handlers } = createMockPi();
+  planModeExtension(pi);
+  const handler = handlers['tool_call']?.[0];
+  if (!handler) throw new Error('tool_call handler not registered');
+  const ctx = createMockCtx();
+  ctx.queueConfirm(false);
+  const result = (await handler({ toolName: 'bash', input: { command: "echo 'unclosed" } }, {
+    ...ctx,
+    cwd: '/project',
+  } as ExtensionContext)) as { block: true; reason: string } | undefined;
+  strictEqual(result?.block, true);
+  strictEqual(result?.reason, PARSE_FAILURE_REASON);
+});
+
+test('tool_call handler: destructive command blocks without prompt', async () => {
+  const { pi, handlers } = createMockPi();
+  planModeExtension(pi);
+  const handler = handlers['tool_call']?.[0];
+  if (!handler) throw new Error('tool_call handler not registered');
+  const ctx = createMockCtx();
+  const result = (await handler({ toolName: 'bash', input: { command: 'rm file.txt' } }, {
+    ...ctx,
+    cwd: '/project',
+  } as ExtensionContext)) as { block: true; reason: string } | undefined;
+  strictEqual(result?.block, true);
+  ok(result!.reason.includes('rm'));
+  strictEqual(ctx._notifications.length, 0);
 });
