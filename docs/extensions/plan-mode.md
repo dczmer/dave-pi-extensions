@@ -39,16 +39,18 @@ When plan mode is active, the context bar will show a visual indicator. When pla
 You can toggle plan mode with a hot-key:
 
 ```text
-Ctrl+Shift
+Ctrl+Space
 ```
-
-(Temporary mapping; will probably make an option, if possible).
 
 Or with a slash-command from within `pi`:
 
 ```text
 /plan
 ```
+
+## Plan Artifact Auto-Rename
+
+After the agent writes the initial plan artifact, the extension reads the first line, extracts a topic slug, and automatically renames the file to match.
 
 ## System Prompt
 

@@ -1,5 +1,5 @@
 {
-  description = "Flake template";
+  description = "Nix devShell for dave-pi-extensions package";
   inputs = {
     flake-utils.url = "github:numtide/flake-utils";
     dave-shield.url = "github:dczmer/dave-shield";

@@ -237,7 +237,7 @@ export function maybeRenamePlanArtifact(
  * Register the plan-mode extension.
  *
  * Installs a CLI flag (`--no-plan`), a slash command (`/plan`), a keyboard
- * shortcut (Ctrl-Shift-Z), and event hooks that enforce read-only mode.
+ * shortcut (Ctrl-Space), and event hooks that enforce read-only mode.
  * Plan mode is active by default; pass `--no-plan` to disable on startup.
  * When active, edit/write tools and destructive bash commands are blocked,
  * and a planning prompt is injected into the system message. Toggle state

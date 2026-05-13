@@ -11,7 +11,7 @@ Pi package bundling extensions, themes, prompts for pi coding agent. Developed o
 - **Runtime / Peer Dependencies**:
   - `@mariozechner/pi` — Pi SDK peer dependency
   - `@mariozechner/pi-coding-agent` — Pi coding agent peer dependency
-  - `bash-parser` — Accurate parsing of complex bash command strings
+  - `bash-parser` — Runtime dependency for accurate parsing of complex bash command strings
 - **Dev Dependencies**:
   - `@types/node` — Node.js types
   - `typescript` — TypeScript compiler
@@ -233,9 +233,9 @@ export interface PiGateConfig { ... }
 
 ## Constraints Checklist
 
-- [ ] Only Node.js built-ins (`node:*`), `@mariozechner/*`, and `bash-parser` imports at runtime
-- [ ] Dev dependencies (`typescript`, `@types/node`) allowed with manual install
-- [ ] Tests use `node:test` and `node:assert`
-- [ ] Project `package.json` and root `tsconfig.json` present
-- [ ] Prettier config (`.prettierrc.json`) and ignore (`.prettierignore`) present
-- [ ] All verification commands pass before finishing
+- [x] Only Node.js built-ins (`node:*`), `@mariozechner/*`, and `bash-parser` imports at runtime
+- [x] Dev dependencies (`typescript`, `@types/node`) allowed with manual install
+- [x] Tests use `node:test` and `node:assert`
+- [x] Project `package.json` and root `tsconfig.json` present
+- [x] Prettier config (`.prettierrc.json`) and ignore (`.prettierignore`) present
+- [x] All verification commands pass before finishing
