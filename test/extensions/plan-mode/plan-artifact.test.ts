@@ -6,6 +6,7 @@ import {
   isPlanArtifactPath,
   isTempPath,
   isUnderArtifactDir,
+  extractTopicSlug,
 } from '../../../extensions/plan-mode/plan-artifact.ts';
 
 test('generatePlanSlug produces unique values', () => {
@@ -81,4 +82,41 @@ test('isUnderArtifactDir: rejects unrelated path', () => {
 
 test('isUnderArtifactDir: blocks directory traversal', () => {
   strictEqual(isUnderArtifactDir('.pi/artifacts/../../etc', '/project'), false);
+});
+
+test('extractTopicSlug: generates slug from first line', () => {
+  strictEqual(
+    extractTopicSlug('Refactor authentication middleware for better security'),
+    'refactor-authentication-middleware-for-better-security',
+  );
+});
+
+test('extractTopicSlug: limits to 6 words by default', () => {
+  strictEqual(extractTopicSlug('One two three four five six seven eight'), 'one-two-three-four-five-six');
+});
+
+test('extractTopicSlug: respects custom maxWords', () => {
+  strictEqual(extractTopicSlug('One two three four five six seven', 4), 'one-two-three-four');
+});
+
+test('extractTopicSlug: lowercases and sanitizes punctuation', () => {
+  strictEqual(extractTopicSlug('Implement user-auth (with OAuth2!)'), 'implement-user-auth-with-oauth2');
+});
+
+test('extractTopicSlug: trims leading and trailing non-alphanumeric', () => {
+  strictEqual(extractTopicSlug('!!!Hello World!!!'), 'hello-world');
+});
+
+test('extractTopicSlug: caps length to maxLength', () => {
+  const long = 'a'.repeat(100);
+  strictEqual(extractTopicSlug(long, 6, 10).length, 10);
+});
+
+test('extractTopicSlug: skips empty lines to find first non-empty', () => {
+  strictEqual(extractTopicSlug('\n\n  Hello World  \n\nMore text'), 'hello-world');
+});
+
+test('extractTopicSlug: returns empty string when content is empty', () => {
+  strictEqual(extractTopicSlug(''), '');
+  strictEqual(extractTopicSlug('\n\n   \n'), '');
 });

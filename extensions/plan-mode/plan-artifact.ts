@@ -31,6 +31,36 @@ export function generatePlanSlug(): string {
 }
 
 /**
+ * Extract a topic slug from plan content.
+ *
+ * Reads the first non-empty line, sanitizes it, and returns
+ * up to `maxWords` words joined by hyphens. The result is capped
+ * to `maxLength` characters.
+ *
+ * @param content - Plan file content.
+ * @param maxWords - Maximum words to include (default 6).
+ * @param maxLength - Maximum length of the topic portion (default 60).
+ * @returns Sanitized slug like `refactor-authentication-middleware-for-better-security`.
+ */
+export function extractTopicSlug(content: string, maxWords = 6, maxLength = 60): string {
+  const firstLine = content.split('\n').find((line) => line.trim().length > 0) ?? '';
+  let slug = firstLine
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+
+  const words = slug.split('-').filter((w) => w.length > 0);
+  const limited = words.slice(0, maxWords);
+  slug = limited.join('-');
+
+  if (slug.length > maxLength) {
+    slug = slug.slice(0, maxLength).replace(/-+$/, '');
+  }
+
+  return slug;
+}
+
+/**
  * Determine whether a file path is a permitted plan artifact.
  *
  * Only files inside `{cwd}/.pi/artifacts/` whose basename matches

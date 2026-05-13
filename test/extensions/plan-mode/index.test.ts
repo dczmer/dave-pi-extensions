@@ -1,12 +1,13 @@
 import { strictEqual, ok } from 'node:assert';
 import { test } from 'node:test';
-import { writeFileSync, mkdtempSync, rmSync } from 'node:fs';
+import { writeFileSync, mkdtempSync, rmSync, mkdirSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
   resolvePlanModeOnSessionStart,
   evaluateToolCall,
   augmentSystemPrompt,
+  maybeRenamePlanArtifact,
 } from '../../../extensions/plan-mode/index.ts';
 
 function withTempDir<T>(fn: (dir: string) => T): T {
@@ -205,4 +206,106 @@ test('evaluateToolCall: blocks mkdir outside artifact dir in plan mode', () => {
 
 test('evaluateToolCall: allows mkdir outside artifact dir when plan mode is off', () => {
   strictEqual(evaluateToolCall(false, 'bash', 'mkdir other', undefined, '/project'), undefined);
+});
+
+test('maybeRenamePlanArtifact: ignores non-write tool results', () => {
+  withTempDir((dir) => {
+    const result = maybeRenamePlanArtifact(
+      true,
+      'plan-20260512-abcd1234',
+      { toolName: 'read', input: { path: '.pi/artifacts/plan-20260512-abcd1234.md' } },
+      dir,
+    );
+    strictEqual(result, undefined);
+  });
+});
+
+test('maybeRenamePlanArtifact: ignores write to non-plan file', () => {
+  withTempDir((dir) => {
+    const result = maybeRenamePlanArtifact(
+      true,
+      'plan-20260512-abcd1234',
+      { toolName: 'write', input: { path: 'other.md' } },
+      dir,
+    );
+    strictEqual(result, undefined);
+  });
+});
+
+test('maybeRenamePlanArtifact: ignores when plan mode disabled', () => {
+  withTempDir((dir) => {
+    mkdirSync(join(dir, '.pi', 'artifacts'), { recursive: true });
+    writeFileSync(join(dir, '.pi', 'artifacts', 'plan-20260512-abcd1234.md'), '# Topic here');
+    const result = maybeRenamePlanArtifact(
+      false,
+      'plan-20260512-abcd1234',
+      { toolName: 'write', input: { path: '.pi/artifacts/plan-20260512-abcd1234.md' } },
+      dir,
+    );
+    strictEqual(result, undefined);
+  });
+});
+
+test('maybeRenamePlanArtifact: renames plan file based on topic', () => {
+  withTempDir((dir) => {
+    mkdirSync(join(dir, '.pi', 'artifacts'), { recursive: true });
+    writeFileSync(
+      join(dir, '.pi', 'artifacts', 'plan-20260512-abcd1234.md'),
+      'Refactor authentication middleware for better security\n\nContext...',
+    );
+    const result = maybeRenamePlanArtifact(
+      true,
+      'plan-20260512-abcd1234',
+      { toolName: 'write', input: { path: '.pi/artifacts/plan-20260512-abcd1234.md' } },
+      dir,
+    );
+    strictEqual(result, 'plan-20260512-refactor-authentication-middleware-for-better-security');
+    strictEqual(existsSync(join(dir, '.pi', 'artifacts', 'plan-20260512-abcd1234.md')), false);
+    strictEqual(
+      existsSync(
+        join(dir, '.pi', 'artifacts', 'plan-20260512-refactor-authentication-middleware-for-better-security.md'),
+      ),
+      true,
+    );
+  });
+});
+
+test('maybeRenamePlanArtifact: returns undefined when topic slug matches current', () => {
+  withTempDir((dir) => {
+    mkdirSync(join(dir, '.pi', 'artifacts'), { recursive: true });
+    writeFileSync(join(dir, '.pi', 'artifacts', 'plan-20260512-refactor.md'), 'Refactor\n\nContext...');
+    const result = maybeRenamePlanArtifact(
+      true,
+      'plan-20260512-refactor',
+      { toolName: 'write', input: { path: '.pi/artifacts/plan-20260512-refactor.md' } },
+      dir,
+    );
+    strictEqual(result, undefined);
+  });
+});
+
+test('maybeRenamePlanArtifact: returns undefined when no topic found', () => {
+  withTempDir((dir) => {
+    mkdirSync(join(dir, '.pi', 'artifacts'), { recursive: true });
+    writeFileSync(join(dir, '.pi', 'artifacts', 'plan-20260512-abcd1234.md'), '\n\n!!!   \n');
+    const result = maybeRenamePlanArtifact(
+      true,
+      'plan-20260512-abcd1234',
+      { toolName: 'write', input: { path: '.pi/artifacts/plan-20260512-abcd1234.md' } },
+      dir,
+    );
+    strictEqual(result, undefined);
+  });
+});
+
+test('maybeRenamePlanArtifact: ignores when currentPlanSlug undefined', () => {
+  withTempDir((dir) => {
+    const result = maybeRenamePlanArtifact(
+      true,
+      undefined,
+      { toolName: 'write', input: { path: '.pi/artifacts/plan-20260512-abcd1234.md' } },
+      dir,
+    );
+    strictEqual(result, undefined);
+  });
 });

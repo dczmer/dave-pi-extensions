@@ -8,12 +8,12 @@
  * to start a session without it.
  */
 
-import { existsSync, mkdirSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, renameSync } from 'node:fs';
 import { resolve } from 'node:path';
 import type { ExtensionAPI, ExtensionContext } from '@mariozechner/pi-coding-agent';
 import { Key } from '@mariozechner/pi-tui';
 import { isDestructiveCommand } from './bash-guard.ts';
-import { generatePlanSlug, isPlanArtifactPath, isTempPath } from './plan-artifact.ts';
+import { generatePlanSlug, isPlanArtifactPath, isTempPath, extractTopicSlug } from './plan-artifact.ts';
 
 const BLOCK_REASON =
   'Blocked: Planning mode active. Present a plan instead — do not make changes. ' +
@@ -46,6 +46,7 @@ Repeat until the plan is complete:
 
 ## Plan File Structure
 The plan at ${planFilePath} must include:
+- A single concise topic statement on the first line describing what the plan is for
 - Context: why this change is needed
 - Recommended approach (not every alternative)
 - Critical files to modify, with specific changes
@@ -172,6 +173,65 @@ export function augmentSystemPrompt(
 }
 
 /**
+ * After a write tool result targeting the current plan artifact, read the file
+ * and rename it to a topic-derived slug if the content starts with a topic
+ * statement.
+ *
+ * @param planModeEnabled - Whether plan mode is currently active.
+ * @param currentPlanSlug - The current plan slug (may be temporary).
+ * @param event - Tool result event.
+ * @param cwd - Current working directory.
+ * @returns The new slug if renamed, otherwise `undefined`.
+ */
+export function maybeRenamePlanArtifact(
+  planModeEnabled: boolean,
+  currentPlanSlug: string | undefined,
+  event: { toolName: string; input: Record<string, unknown> },
+  cwd: string,
+): string | undefined {
+  if (!planModeEnabled || !currentPlanSlug) {
+    return undefined;
+  }
+
+  if (event.toolName !== 'write') {
+    return undefined;
+  }
+
+  const writePath = (event.input as { path?: string }).path;
+  if (!writePath) {
+    return undefined;
+  }
+
+  const planFilePath = resolve(cwd, '.pi', 'artifacts', `${currentPlanSlug}.md`);
+  const resolvedWritePath = resolve(cwd, writePath);
+
+  if (resolvedWritePath !== planFilePath) {
+    return undefined;
+  }
+
+  if (!existsSync(planFilePath)) {
+    return undefined;
+  }
+
+  const content = readFileSync(planFilePath, 'utf-8');
+  const topicSlug = extractTopicSlug(content);
+  if (!topicSlug) {
+    return undefined;
+  }
+
+  const date = currentPlanSlug.split('-')[1] ?? new Date().toISOString().slice(0, 10).replace(/-/g, '');
+  const newSlug = `plan-${date}-${topicSlug}`;
+
+  if (newSlug === currentPlanSlug) {
+    return undefined;
+  }
+
+  const newPath = resolve(cwd, '.pi', 'artifacts', `${newSlug}.md`);
+  renameSync(planFilePath, newPath);
+  return newSlug;
+}
+
+/**
  * Register the plan-mode extension.
  *
  * Installs a CLI flag (`--no-plan`), a slash command (`/plan`), a keyboard
@@ -235,6 +295,15 @@ export default function (pi: ExtensionAPI): void {
     const command = (event.input as { command?: string }).command?.trim();
     const path = (event.input as { path?: string }).path;
     return evaluateToolCall(planModeEnabled, event.toolName, command, path, ctx.cwd);
+  });
+
+  // Rename plan artifact to topic slug after first write
+  pi.on('tool_result', async (event, ctx) => {
+    const newSlug = maybeRenamePlanArtifact(planModeEnabled, currentPlanSlug, event, ctx.cwd);
+    if (newSlug) {
+      currentPlanSlug = newSlug;
+      persist();
+    }
   });
 
   // Inject planning prompt into system prompt (ephemeral, per-turn).
