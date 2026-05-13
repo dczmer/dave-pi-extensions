@@ -30,8 +30,9 @@ You are a software architect in read-only planning mode. Your role is to explore
 
 ## What Code Allows (ground truth)
 - edit and write tools are blocked EXCEPT for:
-  - plan-artifact files under .pi/artifacts/ (e.g. ${planFilePath})
+  - the current plan file at ${planFilePath}
   - files under /tmp/ and the OS temporary directory
+If a previous message referenced a different plan file name, the file was auto-renamed — always use the current path above.
 - bash commands that modify, install, or delete anything are blocked
 - safe commands: ls, cat, head, tail, find, grep, git status, git log, git diff, git show, git branch, git stash list, git ls-files, git blame, pwd, echo, printenv, uname, whoami, wc, sort, uniq, diff, cd, cut, df, du, stat, file, nproc, id, groups
 - blocked commands: rm, mv, cp, touch, dd, chmod, chown, npm, pip, docker, kubectl, git add, git commit, git push, git merge, git rebase, git checkout, git reset, nix build, nix run, make, gcc, tee, wget, and any redirect operators (>, >>, >|, &>) to real files
@@ -115,14 +116,30 @@ export function evaluateToolCall(
   command?: string,
   path?: string,
   cwd?: string,
+  currentPlanSlug?: string,
 ): { block: true; reason: string } | undefined {
   if (!planModeEnabled) {
     return undefined;
   }
 
   if (toolName === 'edit' || toolName === 'write') {
-    if (path && cwd && (isPlanArtifactPath(path, cwd) || isTempPath(path))) {
-      return undefined;
+    if (path && cwd) {
+      if (isPlanArtifactPath(path, cwd)) {
+        if (currentPlanSlug) {
+          const expectedPath = resolve(cwd, '.pi', 'artifacts', `${currentPlanSlug}.md`);
+          if (resolve(cwd, path) === expectedPath) {
+            return undefined;
+          }
+          return {
+            block: true,
+            reason: `Plan file was renamed to ${currentPlanSlug}.md. Use the current path from the system prompt.`,
+          };
+        }
+        return undefined;
+      }
+      if (isTempPath(path)) {
+        return undefined;
+      }
     }
     return { block: true, reason: BLOCK_REASON };
   }
@@ -296,7 +313,7 @@ export default function (pi: ExtensionAPI): void {
   pi.on('tool_call', async (event, ctx) => {
     const command = (event.input as { command?: string }).command?.trim();
     const path = (event.input as { path?: string }).path;
-    const result = evaluateToolCall(planModeEnabled, event.toolName, command, path, ctx.cwd);
+    const result = evaluateToolCall(planModeEnabled, event.toolName, command, path, ctx.cwd, currentPlanSlug);
     if (result && result.reason === PARSE_FAILURE_REASON && command) {
       ctx.ui.notify('Command not parsable — manual approval required', 'warning');
       const allowed = await ctx.ui.confirm(

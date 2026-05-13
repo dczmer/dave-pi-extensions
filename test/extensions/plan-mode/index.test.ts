@@ -204,8 +204,41 @@ test('augmentSystemPrompt: omits plan path when not provided', () => {
 });
 
 test('evaluateToolCall: allows write to plan artifact in plan mode', () => {
-  const result = evaluateToolCall(true, 'write', undefined, '.pi/artifacts/plan-20260512-abc123.md', '/project');
+  const result = evaluateToolCall(
+    true,
+    'write',
+    undefined,
+    '.pi/artifacts/plan-20260512-abc123.md',
+    '/project',
+    'plan-20260512-abc123',
+  );
   strictEqual(result, undefined);
+});
+
+test('evaluateToolCall: allows write to exact current plan artifact', () => {
+  const result = evaluateToolCall(
+    true,
+    'write',
+    undefined,
+    '.pi/artifacts/plan-20260512-abc123.md',
+    '/project',
+    'plan-20260512-abc123',
+  );
+  strictEqual(result, undefined);
+});
+
+test('evaluateToolCall: blocks write to non-current plan artifact with rename hint', () => {
+  const result = evaluateToolCall(
+    true,
+    'write',
+    undefined,
+    '.pi/artifacts/plan-20260512-oldslug.md',
+    '/project',
+    'plan-20260512-abc123',
+  );
+  strictEqual(result?.block, true);
+  ok(result!.reason.includes('renamed to plan-20260512-abc123.md'));
+  ok(result!.reason.includes('current path'));
 });
 
 test('evaluateToolCall: allows write to /tmp in plan mode', () => {
