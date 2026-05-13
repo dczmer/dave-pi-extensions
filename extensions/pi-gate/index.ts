@@ -21,6 +21,12 @@ export default function (pi: ExtensionAPI) {
 
       const allowed = await checkBashCommand(command, ctx.cwd, configResult, ctx);
       if (!allowed) {
+        pi.events.emit('harness:block', {
+          toolCallId: event.toolCallId,
+          tool: event.toolName,
+          extension: 'pi-gate',
+          reason: 'Blocked by pi-gate',
+        });
         return { block: true, reason: 'Blocked by pi-gate' };
       }
       return;
@@ -33,6 +39,12 @@ export default function (pi: ExtensionAPI) {
 
       const allowed = await checkFileAccess(path, ctx.cwd, configResult, ctx);
       if (!allowed) {
+        pi.events.emit('harness:block', {
+          toolCallId: event.toolCallId,
+          tool: event.toolName,
+          extension: 'pi-gate',
+          reason: 'Blocked by pi-gate',
+        });
         return { block: true, reason: 'Blocked by pi-gate' };
       }
       return;

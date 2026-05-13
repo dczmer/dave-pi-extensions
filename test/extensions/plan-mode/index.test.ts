@@ -31,6 +31,7 @@ function createMockCtx() {
 
 function createMockPi() {
   const handlers: Record<string, Array<(event: unknown, ctx: unknown) => Promise<unknown>>> = {};
+  const emitted: Array<{ channel: string; data: unknown }> = [];
   const pi = {
     registerFlag: () => {},
     registerCommand: () => {},
@@ -40,8 +41,15 @@ function createMockPi() {
       (handlers[event] ??= []).push(handler);
     },
     appendEntry: () => {},
+    events: {
+      emit: (channel: string, data: unknown) => {
+        emitted.push({ channel, data });
+      },
+      on: () => () => {},
+    },
+    _emitted: emitted,
   };
-  return { pi: pi as unknown as ExtensionAPI, handlers };
+  return { pi: pi as unknown as ExtensionAPI, handlers, emitted };
 }
 
 function withTempDir<T>(fn: (dir: string) => T): T {
@@ -438,4 +446,101 @@ test('tool_call handler: destructive command blocks without prompt', async () =>
   strictEqual(result?.block, true);
   ok(result!.reason.includes('rm'));
   strictEqual(ctx._notifications.length, 0);
+});
+
+test('tool_call handler: emits harness:block for edit block', async () => {
+  const { pi, handlers, emitted } = createMockPi();
+  planModeExtension(pi);
+  const handler = handlers['tool_call']?.[0];
+  if (!handler) throw new Error('tool_call handler not registered');
+  const ctx = createMockCtx();
+  const result = (await handler({ toolName: 'edit', input: { path: 'src/index.ts' }, toolCallId: 'call-edit-1' }, {
+    ...ctx,
+    cwd: '/project',
+  } as ExtensionContext)) as { block: true; reason: string } | undefined;
+  strictEqual(result?.block, true);
+  const blockEvent = emitted.find((e) => e.channel === 'harness:block');
+  ok(blockEvent, 'harness:block event should be emitted');
+  const data = blockEvent!.data as { toolCallId: string; tool: string; extension: string; reason: string };
+  strictEqual(data.toolCallId, 'call-edit-1');
+  strictEqual(data.tool, 'edit');
+  strictEqual(data.extension, 'plan-mode');
+  ok(data.reason.includes('Planning mode active'));
+});
+
+test('tool_call handler: emits harness:block for write block', async () => {
+  const { pi, handlers, emitted } = createMockPi();
+  planModeExtension(pi);
+  const handler = handlers['tool_call']?.[0];
+  if (!handler) throw new Error('tool_call handler not registered');
+  const ctx = createMockCtx();
+  const result = (await handler({ toolName: 'write', input: { path: 'src/index.ts' }, toolCallId: 'call-write-1' }, {
+    ...ctx,
+    cwd: '/project',
+  } as ExtensionContext)) as { block: true; reason: string } | undefined;
+  strictEqual(result?.block, true);
+  const blockEvent = emitted.find((e) => e.channel === 'harness:block');
+  ok(blockEvent, 'harness:block event should be emitted');
+  const data = blockEvent!.data as { toolCallId: string; tool: string; extension: string; reason: string };
+  strictEqual(data.toolCallId, 'call-write-1');
+  strictEqual(data.tool, 'write');
+  strictEqual(data.extension, 'plan-mode');
+});
+
+test('tool_call handler: emits harness:block for bash block', async () => {
+  const { pi, handlers, emitted } = createMockPi();
+  planModeExtension(pi);
+  const handler = handlers['tool_call']?.[0];
+  if (!handler) throw new Error('tool_call handler not registered');
+  const ctx = createMockCtx();
+  const result = (await handler({ toolName: 'bash', input: { command: 'npm install' }, toolCallId: 'call-bash-1' }, {
+    ...ctx,
+    cwd: '/project',
+  } as ExtensionContext)) as { block: true; reason: string } | undefined;
+  strictEqual(result?.block, true);
+  const blockEvent = emitted.find((e) => e.channel === 'harness:block');
+  ok(blockEvent, 'harness:block event should be emitted');
+  const data = blockEvent!.data as { toolCallId: string; tool: string; extension: string; reason: string };
+  strictEqual(data.toolCallId, 'call-bash-1');
+  strictEqual(data.tool, 'bash');
+  strictEqual(data.extension, 'plan-mode');
+  ok(data.reason.includes('npm'));
+});
+
+test('tool_call handler: parse failure rejection emits harness:block', async () => {
+  const { pi, handlers, emitted } = createMockPi();
+  planModeExtension(pi);
+  const handler = handlers['tool_call']?.[0];
+  if (!handler) throw new Error('tool_call handler not registered');
+  const ctx = createMockCtx();
+  ctx.queueConfirm(false);
+  const result = (await handler(
+    { toolName: 'bash', input: { command: "echo 'unclosed" }, toolCallId: 'call-parse-1' },
+    {
+      ...ctx,
+      cwd: '/project',
+    } as ExtensionContext,
+  )) as { block: true; reason: string } | undefined;
+  strictEqual(result?.block, true);
+  const blockEvent = emitted.find((e) => e.channel === 'harness:block');
+  ok(blockEvent, 'harness:block event should be emitted');
+  const data = blockEvent!.data as { toolCallId: string; tool: string; extension: string; reason: string };
+  strictEqual(data.toolCallId, 'call-parse-1');
+  strictEqual(data.tool, 'bash');
+  strictEqual(data.extension, 'plan-mode');
+  strictEqual(data.reason, PARSE_FAILURE_REASON);
+});
+
+test('tool_call handler: allowed tool does not emit harness:block', async () => {
+  const { pi, handlers, emitted } = createMockPi();
+  planModeExtension(pi);
+  const handler = handlers['tool_call']?.[0];
+  if (!handler) throw new Error('tool_call handler not registered');
+  const ctx = createMockCtx();
+  const result = await handler({ toolName: 'read', input: { path: 'src/index.ts' }, toolCallId: 'call-read-1' }, {
+    ...ctx,
+    cwd: '/project',
+  } as ExtensionContext);
+  strictEqual(result, undefined);
+  strictEqual(emitted.filter((e) => e.channel === 'harness:block').length, 0);
 });

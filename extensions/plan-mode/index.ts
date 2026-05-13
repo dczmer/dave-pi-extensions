@@ -314,6 +314,14 @@ export default function (pi: ExtensionAPI): void {
     const command = (event.input as { command?: string }).command?.trim();
     const path = (event.input as { path?: string }).path;
     const result = evaluateToolCall(planModeEnabled, event.toolName, command, path, ctx.cwd, currentPlanSlug);
+    if (result) {
+      pi.events.emit('harness:block', {
+        toolCallId: event.toolCallId,
+        tool: event.toolName,
+        extension: 'plan-mode',
+        reason: result.reason,
+      });
+    }
     if (result && result.reason === PARSE_FAILURE_REASON && command) {
       ctx.ui.notify('Command not parsable — manual approval required', 'warning');
       const allowed = await ctx.ui.confirm(
