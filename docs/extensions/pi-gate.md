@@ -90,11 +90,13 @@ I have split the configuration into global and project level settings files. Sin
 ![pi-gate-save](../images/pi-gate-save.png)
 
 The global config file:
+
 ```
 $HOME/.pi/agent/extensions/pi-gate.json
 ```
 
 And the per-project config file:
+
 ```
 ./.pi/extensions/pi-gate.json
 ```

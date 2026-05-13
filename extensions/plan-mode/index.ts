@@ -188,6 +188,7 @@ export function maybeRenamePlanArtifact(
   currentPlanSlug: string | undefined,
   event: { toolName: string; input: Record<string, unknown> },
   cwd: string,
+  ctx: ExtensionContext,
 ): string | undefined {
   if (!planModeEnabled || !currentPlanSlug) {
     return undefined;
@@ -228,6 +229,7 @@ export function maybeRenamePlanArtifact(
 
   const newPath = resolve(cwd, '.pi', 'artifacts', `${newSlug}.md`);
   renameSync(planFilePath, newPath);
+  ctx.ui.notify(`Plan renamed to ${newSlug}.md`, 'info');
   return newSlug;
 }
 
@@ -299,7 +301,7 @@ export default function (pi: ExtensionAPI): void {
 
   // Rename plan artifact to topic slug after first write
   pi.on('tool_result', async (event, ctx) => {
-    const newSlug = maybeRenamePlanArtifact(planModeEnabled, currentPlanSlug, event, ctx.cwd);
+    const newSlug = maybeRenamePlanArtifact(planModeEnabled, currentPlanSlug, event, ctx.cwd, ctx);
     if (newSlug) {
       currentPlanSlug = newSlug;
       persist();

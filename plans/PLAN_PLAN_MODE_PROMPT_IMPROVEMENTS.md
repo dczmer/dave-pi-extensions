@@ -12,6 +12,7 @@ Code decides what is allowed. Prompt reinforces why.
 This inversion matters: if the prompt is the primary enforcement, models hallucinate around it. If code owns the decision tree, the prompt only needs to explain the policy the code already implements.
 
 Claude Code's architecture makes this split explicit:
+
 - **Tool schema + execution layer** (code) controls which files/tools are reachable.
 - **System reminders** (prompt) tell the model what the code will do and why, so it can plan efficiently rather than trial-and-error against blocks.
 
@@ -26,6 +27,7 @@ This plan fixes the inversion.
 ### 1.1 Current Behavior
 
 `extensions/plan-mode/index.ts` injects `PLAN_PROMPT` into the system prompt and blocks:
+
 - `edit`, `write` tools unconditionally
 - Destructive bash commands via `bash-guard.ts`
 
@@ -33,18 +35,18 @@ The prompt says "Present a plan" but there is no place to write it. The model em
 
 ### 1.2 What Claude Code Does Differently
 
-| Aspect | Claude Code | Our Current Plan Mode |
-|--------|-------------|----------------------|
-| **Artifact** | Dedicated plan file (`.claude/plan.md` or similar) written incrementally | None — plan lives in chat history |
-| **Write policy** | Code allow-lists the plan file path; all other writes blocked | All writes blocked unconditionally |
-| **Workflow** | Defined loop: Explore → Update plan file → Ask user → Repeat | Static "present a plan" instruction |
-| **Turn endings** | Must end with `AskUserQuestion` or `ExitPlanMode` | No constraint |
-| **Role framing** | "You are a software architect and planning specialist" | "You are in planning mode" |
-| **Safe commands** | Explicit whitelist (`ls`, `git status`, `cat`, etc.) | Vague "use read, grep, find, ls" |
-| **Question discipline** | "Never ask what you could find out by reading the code" | None |
-| **Re-entry** | Reads existing plan file, evaluates same-vs-new task | None |
-| **Diagrams** | Encourages mermaid/ascii for structural changes | None |
-| **Superseding authority** | "This supercedes any other instructions" | None |
+| Aspect                    | Claude Code                                                              | Our Current Plan Mode               |
+| ------------------------- | ------------------------------------------------------------------------ | ----------------------------------- |
+| **Artifact**              | Dedicated plan file (`.claude/plan.md` or similar) written incrementally | None — plan lives in chat history   |
+| **Write policy**          | Code allow-lists the plan file path; all other writes blocked            | All writes blocked unconditionally  |
+| **Workflow**              | Defined loop: Explore → Update plan file → Ask user → Repeat             | Static "present a plan" instruction |
+| **Turn endings**          | Must end with `AskUserQuestion` or `ExitPlanMode`                        | No constraint                       |
+| **Role framing**          | "You are a software architect and planning specialist"                   | "You are in planning mode"          |
+| **Safe commands**         | Explicit whitelist (`ls`, `git status`, `cat`, etc.)                     | Vague "use read, grep, find, ls"    |
+| **Question discipline**   | "Never ask what you could find out by reading the code"                  | None                                |
+| **Re-entry**              | Reads existing plan file, evaluates same-vs-new task                     | None                                |
+| **Diagrams**              | Encourages mermaid/ascii for structural changes                          | None                                |
+| **Superseding authority** | "This supercedes any other instructions"                                 | None                                |
 
 ---
 
@@ -53,6 +55,7 @@ The prompt says "Present a plan" but there is no place to write it. The model em
 ### 2.1 Principle
 
 **Code owns the allow/deny matrix.** The prompt only describes what the code already decided. This prevents:
+
 - Model confusion when the prompt says one thing but the tool schema permits another
 - False positives where the model avoids safe commands because the prompt was vague
 - Security gaps where the model thinks it can do something because the prompt implied it
@@ -74,10 +77,12 @@ export function isPlanArtifactPath(filePath: string, cwd: string): boolean;
 ```
 
 Allowed paths:
+
 - `${cwd}/.pi/artifacts/plan.md`
 - `${cwd}/.pi/artifacts/plan-*.md` (for multi-plan or versioned plans)
 
 Everything else blocked, including `.pi/plan.md` or ad-hoc paths. The `.pi/artifacts/` namespace is chosen because:
+
 - `.pi/` is already the project's pi-local directory
 - `artifacts/` distinguishes generated files from config (`.pi/extensions/`, `.pi/config.json`)
 - It mirrors Claude Code's convention of scoped artifact directories
@@ -97,6 +102,7 @@ Everything else blocked, including `.pi/plan.md` or ad-hoc paths. The `.pi/artif
 **Goal:** Enable the model to actually write a plan file without changing the prompt yet.
 
 **Files:**
+
 - `extensions/plan-mode/plan-artifact.ts` — new
 - `extensions/plan-mode/index.ts` — modify
 - `test/extensions/plan-mode/plan-artifact.test.ts` — new
@@ -104,6 +110,7 @@ Everything else blocked, including `.pi/plan.md` or ad-hoc paths. The `.pi/artif
 **Implementation:**
 
 1. Create `plan-artifact.ts`:
+
    ```typescript
    import { resolve, normalize } from 'node:path';
 
@@ -135,6 +142,7 @@ Everything else blocked, including `.pi/plan.md` or ad-hoc paths. The `.pi/artif
 3. Add `mkdir -p .pi/artifacts` on session start if plan mode is enabled and the directory does not exist.
 
 **Tests:**
+
 - `isPlanArtifactPath('.pi/artifacts/plan.md', '/project')` → `true`
 - `isPlanArtifactPath('.pi/artifacts/plan-auth.md', '/project')` → `true`
 - `isPlanArtifactPath('.pi/artifacts/plan.md', '/project')` with absolute path → `true`
@@ -156,6 +164,7 @@ Claude Code's plan mode works because the model can actually edit the plan file.
 **Goal:** Replace the static `PLAN_PROMPT` with a structured system reminder that guides behavior without being the primary enforcement mechanism.
 
 **Files:**
+
 - `extensions/plan-mode/index.ts` — modify `PLAN_PROMPT`
 
 **New prompt structure:**
@@ -198,6 +207,7 @@ If .pi/artifacts/plan.md already exists, read it first. If the user's request is
 ```
 
 **Tests:**
+
 - `augmentSystemPrompt` output contains `.pi/artifacts/plan.md`
 - `augmentSystemPrompt` output contains "software architect"
 - `augmentSystemPrompt` output contains safe-command list
@@ -215,20 +225,41 @@ Claude Code's enhanced plan-mode prompt (`agent-prompt-plan-mode-enhanced.md`) o
 **Goal:** Align `bash-guard.ts` with the prompt's safe-command list so that code, not prompt, is the source of truth for what commands pass through.
 
 **Files:**
+
 - `extensions/plan-mode/bash-guard.ts` — modify
 - `test/extensions/plan-mode/bash-guard.test.ts` — modify
 
 **Implementation:**
 
 1. Add a `SAFE_COMMANDS` set alongside `DESTRUCTIVE_COMMANDS`:
+
    ```typescript
    const SAFE_COMMANDS = new Set([
-     'ls', 'cat', 'head', 'tail', 'find', 'grep',
+     'ls',
+     'cat',
+     'head',
+     'tail',
+     'find',
+     'grep',
      'git', // subcommand checked below
-     'pwd', 'echo', 'printenv', 'uname', 'whoami',
-     'wc', 'sort', 'uniq', 'cut', 'awk', 'sed', // read-only text processing
-     'df', 'du', 'stat', 'file', // inspection
-     'nproc', 'id', 'groups',
+     'pwd',
+     'echo',
+     'printenv',
+     'uname',
+     'whoami',
+     'wc',
+     'sort',
+     'uniq',
+     'cut',
+     'awk',
+     'sed', // read-only text processing
+     'df',
+     'du',
+     'stat',
+     'file', // inspection
+     'nproc',
+     'id',
+     'groups',
    ]);
    ```
 
@@ -237,6 +268,7 @@ Claude Code's enhanced plan-mode prompt (`agent-prompt-plan-mode-enhanced.md`) o
    - Block `git stash` without `list`
 
 3. In `isDestructiveCommand`, add an early-return check:
+
    ```typescript
    if (SAFE_COMMANDS.has(cmdName) && cmdName !== 'git') {
      // Additional check: no write redirects
@@ -249,20 +281,39 @@ Claude Code's enhanced plan-mode prompt (`agent-prompt-plan-mode-enhanced.md`) o
    - Allowed: `status`, `log`, `diff`, `show`, `branch`, `tag`, `remote`, `stash list`, `grep`, `blame`, `ls-files`, `ls-tree`, `ls-remote`, `rev-parse`, `rev-list`, `describe`, `config --get*`, `fetch`, `shortlog`, `reflog`, `help`, `version`, `whatchanged`
    - Blocked: everything else (`add`, `commit`, `push`, `pull`, `merge`, `rebase`, `checkout`, `reset`, `clean`, etc.)
 
-5. For `sed`, `awk` — these are tricky. Claude Code's approach is to block them entirely in read-only mode because they *can* write with `-i` or redirection. We should follow that: remove `sed` and `awk` from `SAFE_COMMANDS` and let them fall through to the general "not explicitly safe" path, which blocks them.
+5. For `sed`, `awk` — these are tricky. Claude Code's approach is to block them entirely in read-only mode because they _can_ write with `-i` or redirection. We should follow that: remove `sed` and `awk` from `SAFE_COMMANDS` and let them fall through to the general "not explicitly safe" path, which blocks them.
 
    Revised `SAFE_COMMANDS`:
+
    ```typescript
    const SAFE_COMMANDS = new Set([
-     'ls', 'cat', 'head', 'tail', 'find', 'grep',
-     'pwd', 'echo', 'printenv', 'uname', 'whoami',
-     'wc', 'sort', 'uniq', 'cut',
-     'df', 'du', 'stat', 'file',
-     'nproc', 'id', 'groups',
+     'ls',
+     'cat',
+     'head',
+     'tail',
+     'find',
+     'grep',
+     'pwd',
+     'echo',
+     'printenv',
+     'uname',
+     'whoami',
+     'wc',
+     'sort',
+     'uniq',
+     'cut',
+     'df',
+     'du',
+     'stat',
+     'file',
+     'nproc',
+     'id',
+     'groups',
    ]);
    ```
 
 **Tests:**
+
 - `git status` → allowed
 - `git log --oneline` → allowed
 - `git diff HEAD~1` → allowed
@@ -289,6 +340,7 @@ The enhanced Claude Code prompt (`agent-prompt-plan-mode-enhanced.md`) lists saf
 **Goal:** Add behavioral constraints for how planning turns end, and handle re-entry when plan mode is toggled off and on again.
 
 **Files:**
+
 - `extensions/plan-mode/index.ts` — modify session state and prompt injection
 
 **Implementation:**
@@ -335,15 +387,14 @@ export function augmentSystemPrompt(
   if (!planModeEnabled) return undefined;
 
   const reEntry = getReEntryPrefix(cwd);
-  const fullPlanPrompt = reEntry
-    ? `${reEntry}\n\n${PLAN_PROMPT}`
-    : PLAN_PROMPT;
+  const fullPlanPrompt = reEntry ? `${reEntry}\n\n${PLAN_PROMPT}` : PLAN_PROMPT;
 
   return { systemPrompt: `${existingPrompt}\n\n${fullPlanPrompt}` };
 }
 ```
 
 **Tests:**
+
 - `augmentSystemPrompt` includes re-entry prefix when `.pi/artifacts/plan.md` exists
 - `augmentSystemPrompt` omits re-entry prefix when plan file does not exist
 - `augmentSystemPrompt` returns `undefined` when plan mode is disabled
@@ -358,10 +409,12 @@ Claude Code's `system-reminder-plan-mode-re-entry.md` handles this explicitly. W
 **Goal:** Update user-facing docs and ensure existing sessions aren't broken.
 
 **Files:**
+
 - `docs/plan-mode.md` — create or update (doesn't currently exist)
 - `README.md` — add plan-mode section if absent
 
 **Documentation contents:**
+
 1. How to enter/exit plan mode (`/plan`, `--no-plan`, Ctrl-Space)
 2. Where plans are written (`.pi/artifacts/plan.md`)
 3. What the model can and cannot do in plan mode
@@ -369,6 +422,7 @@ Claude Code's `system-reminder-plan-mode-re-entry.md` handles this explicitly. W
 5. How to continue a plan after toggling off/on
 
 **Migration:**
+
 - Existing `.pi/plan.md` files (if any users created them manually) are not auto-migrated
 - The new artifact path is `.pi/artifacts/plan.md`
 - No breaking changes to the `/plan` command or `--no-plan` flag
@@ -377,16 +431,16 @@ Claude Code's `system-reminder-plan-mode-re-entry.md` handles this explicitly. W
 
 ## 4. Files to Modify / Create
 
-| File | Action | Phase |
-|------|--------|-------|
-| `extensions/plan-mode/plan-artifact.ts` | Create | 1 |
-| `extensions/plan-mode/index.ts` | Modify | 1, 2, 4 |
-| `extensions/plan-mode/bash-guard.ts` | Modify | 3 |
-| `test/extensions/plan-mode/plan-artifact.test.ts` | Create | 1 |
-| `test/extensions/plan-mode/index.test.ts` | Modify | 1, 2, 4 |
-| `test/extensions/plan-mode/bash-guard.test.ts` | Modify | 3 |
-| `docs/plan-mode.md` | Create | 5 |
-| `README.md` | Modify | 5 |
+| File                                              | Action | Phase   |
+| ------------------------------------------------- | ------ | ------- |
+| `extensions/plan-mode/plan-artifact.ts`           | Create | 1       |
+| `extensions/plan-mode/index.ts`                   | Modify | 1, 2, 4 |
+| `extensions/plan-mode/bash-guard.ts`              | Modify | 3       |
+| `test/extensions/plan-mode/plan-artifact.test.ts` | Create | 1       |
+| `test/extensions/plan-mode/index.test.ts`         | Modify | 1, 2, 4 |
+| `test/extensions/plan-mode/bash-guard.test.ts`    | Modify | 3       |
+| `docs/plan-mode.md`                               | Create | 5       |
+| `README.md`                                       | Modify | 5       |
 
 ---
 
@@ -399,6 +453,7 @@ All tests use `node:test` and `node:assert` per project conventions.
 **Config module mocking:** Tests for `evaluateToolCall` and `augmentSystemPrompt` that consume artifact logic should pass a `cwd` directly or mock `existsSync` — no `process.env` mutation.
 
 **Test order:**
+
 1. `plan-artifact.test.ts` — pure path logic, no pi dependencies
 2. `bash-guard.test.ts` — pure command analysis
 3. `index.test.ts` — integration of artifact + guard + prompt augmentation
@@ -407,14 +462,14 @@ All tests use `node:test` and `node:assert` per project conventions.
 
 ## 6. Risks and Mitigations
 
-| Risk | Mitigation |
-|------|------------|
-| Model writes plan to wrong path (e.g. `plan.md` at root) | Code blocks it; prompt explicitly says `.pi/artifacts/plan.md` |
-| Model forgets to read existing plan on re-entry | Re-entry prefix injected automatically when file exists |
-| Bash guard false-positives on safe commands | Exhaustive `SAFE_COMMANDS` set with tests for each |
-| Bash guard false-negatives on destructive commands | Keep existing `DESTRUCTIVE_COMMANDS` blocklist; `SAFE_COMMANDS` is additive |
-| Plan file grows unbounded | Out of scope; user can delete `.pi/artifacts/plan.md` manually |
-| Model asks for approval in prose instead of signaling readiness | Prompt-only constraint; acceptable risk per Claude Code design |
+| Risk                                                            | Mitigation                                                                  |
+| --------------------------------------------------------------- | --------------------------------------------------------------------------- |
+| Model writes plan to wrong path (e.g. `plan.md` at root)        | Code blocks it; prompt explicitly says `.pi/artifacts/plan.md`              |
+| Model forgets to read existing plan on re-entry                 | Re-entry prefix injected automatically when file exists                     |
+| Bash guard false-positives on safe commands                     | Exhaustive `SAFE_COMMANDS` set with tests for each                          |
+| Bash guard false-negatives on destructive commands              | Keep existing `DESTRUCTIVE_COMMANDS` blocklist; `SAFE_COMMANDS` is additive |
+| Plan file grows unbounded                                       | Out of scope; user can delete `.pi/artifacts/plan.md` manually              |
+| Model asks for approval in prose instead of signaling readiness | Prompt-only constraint; acceptable risk per Claude Code design              |
 
 ---
 
