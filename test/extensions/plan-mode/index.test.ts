@@ -1,5 +1,5 @@
 import { strictEqual, ok } from 'node:assert';
-import { test } from 'node:test';
+import { test, mock, type Mock } from 'node:test';
 import { writeFileSync, mkdtempSync, rmSync, mkdirSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -12,66 +12,8 @@ import {
 } from '../../../extensions/plan-mode/index.ts';
 import planModeExtension from '../../../extensions/plan-mode/index.ts';
 import { PARSE_FAILURE_REASON } from '../../../extensions/plan-mode/bash-guard.ts';
-import type { ExtensionAPI, ExtensionContext } from '@mariozechner/pi-coding-agent';
-
-function createMockCtx() {
-  const notifications: Array<{ message: string; type?: string | undefined }> = [];
-  const confirmQueue: boolean[] = [];
-  const ctx = {
-    ui: {
-      notify: (message: string, type?: string) => {
-        notifications.push({ message, type });
-      },
-      confirm: () => Promise.resolve(confirmQueue.shift() ?? false),
-      setStatus: () => {},
-      theme: {
-        fg: (_color: string, text: string) => text,
-      },
-    },
-    _notifications: notifications,
-    queueConfirm: (v: boolean) => confirmQueue.push(v),
-  };
-  return ctx as typeof ctx & Parameters<typeof maybeRenamePlanArtifact>[4];
-}
-
-function createMockPi() {
-  const handlers: Record<string, Array<(event: unknown, ctx: unknown) => Promise<unknown>>> = {};
-  const commands: Record<string, (args: string[], ctx: ExtensionContext) => Promise<unknown>> = {};
-  const shortcuts: Record<string, (ctx: ExtensionContext) => Promise<unknown>> = {};
-  const emitted: Array<{ channel: string; data: unknown }> = [];
-  const sentMessages: Array<unknown> = [];
-  const pi = {
-    registerFlag: () => {},
-    registerCommand: (
-      name: string,
-      config: { handler: (args: string[], ctx: ExtensionContext) => Promise<unknown> },
-    ) => {
-      commands[name] = config.handler;
-    },
-    registerShortcut: (_key: unknown, config: { handler: (ctx: ExtensionContext) => Promise<unknown> }) => {
-      shortcuts['ctrl-space'] = config.handler;
-    },
-    getFlag: () => false,
-    on: (event: string, handler: (event: unknown, ctx: unknown) => Promise<unknown>) => {
-      (handlers[event] ??= []).push(handler);
-    },
-    appendEntry: () => {},
-    sendMessage: (msg: unknown) => {
-      sentMessages.push(msg);
-    },
-    events: {
-      emit: (channel: string, data: unknown) => {
-        emitted.push({ channel, data });
-      },
-      on: () => () => {},
-    },
-    _emitted: emitted,
-    _sentMessages: sentMessages,
-    _commands: commands,
-    _shortcuts: shortcuts,
-  };
-  return { pi: pi as unknown as ExtensionAPI, handlers, emitted, sentMessages, commands, shortcuts };
-}
+import { createPiTestHarness } from '../../utils/pi-harness.ts';
+import { createUIContext, createExtensionContext } from '../../utils/pi-context.ts';
 
 function withTempDir<T>(fn: (dir: string) => T): T {
   const dir = mkdtempSync(join(tmpdir(), 'pi-plan-'));
@@ -306,7 +248,7 @@ test('evaluateToolCall: allows mkdir outside artifact dir when plan mode is off'
 
 test('maybeRenamePlanArtifact: ignores non-write tool results', () => {
   withTempDir((dir) => {
-    const ctx = createMockCtx();
+    const ctx = createExtensionContext();
     const result = maybeRenamePlanArtifact(
       true,
       'plan-20260512-abcd1234',
@@ -320,7 +262,7 @@ test('maybeRenamePlanArtifact: ignores non-write tool results', () => {
 
 test('maybeRenamePlanArtifact: ignores write to non-plan file', () => {
   withTempDir((dir) => {
-    const ctx = createMockCtx();
+    const ctx = createExtensionContext();
     const result = maybeRenamePlanArtifact(
       true,
       'plan-20260512-abcd1234',
@@ -336,7 +278,7 @@ test('maybeRenamePlanArtifact: ignores when plan mode disabled', () => {
   withTempDir((dir) => {
     mkdirSync(join(dir, '.pi', 'artifacts'), { recursive: true });
     writeFileSync(join(dir, '.pi', 'artifacts', 'plan-20260512-abcd1234.md'), '# Topic here');
-    const ctx = createMockCtx();
+    const ctx = createExtensionContext();
     const result = maybeRenamePlanArtifact(
       false,
       'plan-20260512-abcd1234',
@@ -355,7 +297,7 @@ test('maybeRenamePlanArtifact: renames plan file based on topic', () => {
       join(dir, '.pi', 'artifacts', 'plan-20260512-abcd1234.md'),
       'Refactor authentication middleware for better security\n\nContext...',
     );
-    const ctx = createMockCtx();
+    const ctx = createExtensionContext();
     const result = maybeRenamePlanArtifact(
       true,
       'plan-20260512-abcd1234',
@@ -371,8 +313,8 @@ test('maybeRenamePlanArtifact: renames plan file based on topic', () => {
       ),
       true,
     );
-    strictEqual(ctx._notifications.length, 1);
-    ok(ctx._notifications[0]!.message.includes('Plan renamed to'));
+    strictEqual((ctx.ui.notify as Mock<typeof ctx.ui.notify>).mock.callCount(), 1);
+    ok((ctx.ui.notify as Mock<typeof ctx.ui.notify>).mock.calls[0]!.arguments[0].includes('Plan renamed to'));
   });
 });
 
@@ -380,7 +322,7 @@ test('maybeRenamePlanArtifact: returns undefined when topic slug matches current
   withTempDir((dir) => {
     mkdirSync(join(dir, '.pi', 'artifacts'), { recursive: true });
     writeFileSync(join(dir, '.pi', 'artifacts', 'plan-20260512-refactor.md'), 'Refactor\n\nContext...');
-    const ctx = createMockCtx();
+    const ctx = createExtensionContext();
     const result = maybeRenamePlanArtifact(
       true,
       'plan-20260512-refactor',
@@ -396,7 +338,7 @@ test('maybeRenamePlanArtifact: returns undefined when no topic found', () => {
   withTempDir((dir) => {
     mkdirSync(join(dir, '.pi', 'artifacts'), { recursive: true });
     writeFileSync(join(dir, '.pi', 'artifacts', 'plan-20260512-abcd1234.md'), '\n\n!!!   \n');
-    const ctx = createMockCtx();
+    const ctx = createExtensionContext();
     const result = maybeRenamePlanArtifact(
       true,
       'plan-20260512-abcd1234',
@@ -410,7 +352,7 @@ test('maybeRenamePlanArtifact: returns undefined when no topic found', () => {
 
 test('maybeRenamePlanArtifact: ignores when currentPlanSlug undefined', () => {
   withTempDir((dir) => {
-    const ctx = createMockCtx();
+    const ctx = createExtensionContext();
     const result = maybeRenamePlanArtifact(
       true,
       undefined,
@@ -423,66 +365,75 @@ test('maybeRenamePlanArtifact: ignores when currentPlanSlug undefined', () => {
 });
 
 test('tool_call handler: parse failure with user confirm allows', async () => {
-  const { pi, handlers } = createMockPi();
-  planModeExtension(pi);
-  const handler = handlers['tool_call']?.[0];
-  if (!handler) throw new Error('tool_call handler not registered');
-  const ctx = createMockCtx();
-  ctx.queueConfirm(true);
-  const result = await handler({ toolName: 'bash', input: { command: "echo 'unclosed" } }, {
-    ...ctx,
-    cwd: '/project',
-  } as ExtensionContext);
-  strictEqual(result, undefined);
-  strictEqual(ctx._notifications.length, 1);
-  strictEqual(ctx._notifications[0]!.message, 'Command not parsable — manual approval required');
-  strictEqual(ctx._notifications[0]!.type, 'warning');
+  const harness = await createPiTestHarness(planModeExtension, '/project');
+  const { results, ctx } = await harness.emitEvent(
+    'tool_call',
+    { toolName: 'bash', input: { command: "echo 'unclosed" } },
+    {
+      ui: createUIContext({
+        confirm: mock.fn(async () => true),
+      }),
+    },
+  );
+  strictEqual(results[0], undefined);
+  strictEqual((ctx.ui.notify as Mock<typeof ctx.ui.notify>).mock.callCount(), 1);
+  strictEqual(
+    (ctx.ui.notify as Mock<typeof ctx.ui.notify>).mock.calls[0]!.arguments[0],
+    'Command not parsable — manual approval required',
+  );
+  strictEqual((ctx.ui.notify as Mock<typeof ctx.ui.notify>).mock.calls[0]!.arguments[1], 'warning');
 });
 
 test('tool_call handler: parse failure with user reject blocks', async () => {
-  const { pi, handlers } = createMockPi();
-  planModeExtension(pi);
-  const handler = handlers['tool_call']?.[0];
-  if (!handler) throw new Error('tool_call handler not registered');
-  const ctx = createMockCtx();
-  ctx.queueConfirm(false);
-  const result = (await handler({ toolName: 'bash', input: { command: "echo 'unclosed" } }, {
-    ...ctx,
-    cwd: '/project',
-  } as ExtensionContext)) as { block: true; reason: string } | undefined;
+  const harness = await createPiTestHarness(planModeExtension, '/project');
+  const { results } = await harness.emitEvent(
+    'tool_call',
+    { toolName: 'bash', input: { command: "echo 'unclosed" } },
+    {
+      ui: createUIContext({
+        confirm: mock.fn(async () => false),
+      }),
+    },
+  );
+  const result = results[0] as { block: true; reason: string } | undefined;
   strictEqual(result?.block, true);
   strictEqual(result?.reason, PARSE_FAILURE_REASON);
 });
 
 test('tool_call handler: destructive command blocks without prompt', async () => {
-  const { pi, handlers } = createMockPi();
-  planModeExtension(pi);
-  const handler = handlers['tool_call']?.[0];
-  if (!handler) throw new Error('tool_call handler not registered');
-  const ctx = createMockCtx();
-  const result = (await handler({ toolName: 'bash', input: { command: 'rm file.txt' } }, {
-    ...ctx,
-    cwd: '/project',
-  } as ExtensionContext)) as { block: true; reason: string } | undefined;
+  const harness = await createPiTestHarness(planModeExtension, '/project');
+  const { results, ctx } = await harness.emitEvent(
+    'tool_call',
+    { toolName: 'bash', input: { command: 'rm file.txt' } },
+    {
+      ui: createUIContext({
+        confirm: mock.fn(async () => false),
+      }),
+    },
+  );
+  const result = results[0] as { block: true; reason: string } | undefined;
   strictEqual(result?.block, true);
   ok(result!.reason.includes('rm'));
-  strictEqual(ctx._notifications.length, 0);
+  strictEqual((ctx.ui.notify as Mock<typeof ctx.ui.notify>).mock.callCount(), 0);
 });
 
 test('tool_call handler: emits harness:block for edit block', async () => {
-  const { pi, handlers, emitted } = createMockPi();
-  planModeExtension(pi);
-  const handler = handlers['tool_call']?.[0];
-  if (!handler) throw new Error('tool_call handler not registered');
-  const ctx = createMockCtx();
-  const result = (await handler({ toolName: 'edit', input: { path: 'src/index.ts' }, toolCallId: 'call-edit-1' }, {
-    ...ctx,
-    cwd: '/project',
-  } as ExtensionContext)) as { block: true; reason: string } | undefined;
+  const harness = await createPiTestHarness(planModeExtension, '/project');
+
+  const emitted: unknown[] = [];
+  harness.eventBus.on('harness:block', (data) => emitted.push(data));
+
+  const { results } = await harness.emitEvent('tool_call', {
+    toolName: 'edit',
+    input: { path: 'src/index.ts' },
+    toolCallId: 'call-edit-1',
+  });
+
+  const result = results[0] as { block: true; reason: string } | undefined;
   strictEqual(result?.block, true);
-  const blockEvent = emitted.find((e) => e.channel === 'harness:block');
-  ok(blockEvent, 'harness:block event should be emitted');
-  const data = blockEvent!.data as { toolCallId: string; tool: string; extension: string; reason: string };
+
+  strictEqual(emitted.length, 1);
+  const data = emitted[0] as { toolCallId: string; tool: string; extension: string; reason: string };
   strictEqual(data.toolCallId, 'call-edit-1');
   strictEqual(data.tool, 'edit');
   strictEqual(data.extension, 'plan-mode');
@@ -490,38 +441,44 @@ test('tool_call handler: emits harness:block for edit block', async () => {
 });
 
 test('tool_call handler: emits harness:block for write block', async () => {
-  const { pi, handlers, emitted } = createMockPi();
-  planModeExtension(pi);
-  const handler = handlers['tool_call']?.[0];
-  if (!handler) throw new Error('tool_call handler not registered');
-  const ctx = createMockCtx();
-  const result = (await handler({ toolName: 'write', input: { path: 'src/index.ts' }, toolCallId: 'call-write-1' }, {
-    ...ctx,
-    cwd: '/project',
-  } as ExtensionContext)) as { block: true; reason: string } | undefined;
+  const harness = await createPiTestHarness(planModeExtension, '/project');
+
+  const emitted: unknown[] = [];
+  harness.eventBus.on('harness:block', (data) => emitted.push(data));
+
+  const { results } = await harness.emitEvent('tool_call', {
+    toolName: 'write',
+    input: { path: 'src/index.ts' },
+    toolCallId: 'call-write-1',
+  });
+
+  const result = results[0] as { block: true; reason: string } | undefined;
   strictEqual(result?.block, true);
-  const blockEvent = emitted.find((e) => e.channel === 'harness:block');
-  ok(blockEvent, 'harness:block event should be emitted');
-  const data = blockEvent!.data as { toolCallId: string; tool: string; extension: string; reason: string };
+
+  strictEqual(emitted.length, 1);
+  const data = emitted[0] as { toolCallId: string; tool: string; extension: string; reason: string };
   strictEqual(data.toolCallId, 'call-write-1');
   strictEqual(data.tool, 'write');
   strictEqual(data.extension, 'plan-mode');
 });
 
 test('tool_call handler: emits harness:block for bash block', async () => {
-  const { pi, handlers, emitted } = createMockPi();
-  planModeExtension(pi);
-  const handler = handlers['tool_call']?.[0];
-  if (!handler) throw new Error('tool_call handler not registered');
-  const ctx = createMockCtx();
-  const result = (await handler({ toolName: 'bash', input: { command: 'npm install' }, toolCallId: 'call-bash-1' }, {
-    ...ctx,
-    cwd: '/project',
-  } as ExtensionContext)) as { block: true; reason: string } | undefined;
+  const harness = await createPiTestHarness(planModeExtension, '/project');
+
+  const emitted: unknown[] = [];
+  harness.eventBus.on('harness:block', (data) => emitted.push(data));
+
+  const { results } = await harness.emitEvent('tool_call', {
+    toolName: 'bash',
+    input: { command: 'npm install' },
+    toolCallId: 'call-bash-1',
+  });
+
+  const result = results[0] as { block: true; reason: string } | undefined;
   strictEqual(result?.block, true);
-  const blockEvent = emitted.find((e) => e.channel === 'harness:block');
-  ok(blockEvent, 'harness:block event should be emitted');
-  const data = blockEvent!.data as { toolCallId: string; tool: string; extension: string; reason: string };
+
+  strictEqual(emitted.length, 1);
+  const data = emitted[0] as { toolCallId: string; tool: string; extension: string; reason: string };
   strictEqual(data.toolCallId, 'call-bash-1');
   strictEqual(data.tool, 'bash');
   strictEqual(data.extension, 'plan-mode');
@@ -529,23 +486,26 @@ test('tool_call handler: emits harness:block for bash block', async () => {
 });
 
 test('tool_call handler: parse failure rejection emits harness:block', async () => {
-  const { pi, handlers, emitted } = createMockPi();
-  planModeExtension(pi);
-  const handler = handlers['tool_call']?.[0];
-  if (!handler) throw new Error('tool_call handler not registered');
-  const ctx = createMockCtx();
-  ctx.queueConfirm(false);
-  const result = (await handler(
+  const harness = await createPiTestHarness(planModeExtension, '/project');
+
+  const emitted: unknown[] = [];
+  harness.eventBus.on('harness:block', (data) => emitted.push(data));
+
+  const { results } = await harness.emitEvent(
+    'tool_call',
     { toolName: 'bash', input: { command: "echo 'unclosed" }, toolCallId: 'call-parse-1' },
     {
-      ...ctx,
-      cwd: '/project',
-    } as ExtensionContext,
-  )) as { block: true; reason: string } | undefined;
+      ui: createUIContext({
+        confirm: mock.fn(async () => false),
+      }),
+    },
+  );
+
+  const result = results[0] as { block: true; reason: string } | undefined;
   strictEqual(result?.block, true);
-  const blockEvent = emitted.find((e) => e.channel === 'harness:block');
-  ok(blockEvent, 'harness:block event should be emitted');
-  const data = blockEvent!.data as { toolCallId: string; tool: string; extension: string; reason: string };
+
+  strictEqual(emitted.length, 1);
+  const data = emitted[0] as { toolCallId: string; tool: string; extension: string; reason: string };
   strictEqual(data.toolCallId, 'call-parse-1');
   strictEqual(data.tool, 'bash');
   strictEqual(data.extension, 'plan-mode');
@@ -553,17 +513,19 @@ test('tool_call handler: parse failure rejection emits harness:block', async () 
 });
 
 test('tool_call handler: allowed tool does not emit harness:block', async () => {
-  const { pi, handlers, emitted } = createMockPi();
-  planModeExtension(pi);
-  const handler = handlers['tool_call']?.[0];
-  if (!handler) throw new Error('tool_call handler not registered');
-  const ctx = createMockCtx();
-  const result = await handler({ toolName: 'read', input: { path: 'src/index.ts' }, toolCallId: 'call-read-1' }, {
-    ...ctx,
-    cwd: '/project',
-  } as ExtensionContext);
-  strictEqual(result, undefined);
-  strictEqual(emitted.filter((e) => e.channel === 'harness:block').length, 0);
+  const harness = await createPiTestHarness(planModeExtension, '/project');
+
+  const emitted: unknown[] = [];
+  harness.eventBus.on('harness:block', (data) => emitted.push(data));
+
+  const { results } = await harness.emitEvent('tool_call', {
+    toolName: 'read',
+    input: { path: 'src/index.ts' },
+    toolCallId: 'call-read-1',
+  });
+
+  strictEqual(results[0], undefined);
+  strictEqual(emitted.length, 0);
 });
 
 test('isBlockedInput: matches implement prefix', () => {
@@ -586,111 +548,106 @@ test('isBlockedInput: ignores non-matching text', () => {
 });
 
 test('input handler: blocks implement message in plan mode', async () => {
-  const { pi, handlers, sentMessages } = createMockPi();
-  planModeExtension(pi);
-  const handler = handlers['input']?.[0];
-  if (!handler) throw new Error('input handler not registered');
-  const ctx = createMockCtx();
-  const result = await handler({ text: 'implement the plan' }, {
-    ...ctx,
-    cwd: '/project',
-  } as ExtensionContext);
-  strictEqual((result as { action: string }).action, 'handled');
-  strictEqual(sentMessages.length, 1);
-  const msg = sentMessages[0] as { customType: string; content: string; display: boolean };
+  const harness = await createPiTestHarness(planModeExtension, '/project');
+
+  const sendMessageSpy = mock.fn(() => {}) as unknown as Mock<typeof harness.runtime.sendMessage>;
+  harness.runtime.sendMessage = sendMessageSpy as unknown as typeof harness.runtime.sendMessage;
+
+  const { results, ctx } = await harness.emitEvent('input', { text: 'implement the plan' });
+
+  strictEqual((results[0] as { action: string }).action, 'handled');
+  strictEqual(sendMessageSpy.mock.callCount(), 1);
+  const msg = sendMessageSpy.mock.calls[0]!.arguments[0] as {
+    customType: string;
+    content: string;
+    display: boolean;
+  };
   strictEqual(msg.customType, 'plan-mode-block');
   ok(msg.content.includes('Plan mode is active'));
   strictEqual(msg.display, true);
-  strictEqual(ctx._notifications.length, 1);
-  strictEqual(ctx._notifications[0]!.type, 'warning');
+  strictEqual((ctx.ui.notify as Mock<typeof ctx.ui.notify>).mock.callCount(), 1);
+  strictEqual((ctx.ui.notify as Mock<typeof ctx.ui.notify>).mock.calls[0]!.arguments[1], 'warning');
 });
 
 test('input handler: blocks commit message in plan mode', async () => {
-  const { pi, handlers, sentMessages } = createMockPi();
-  planModeExtension(pi);
-  const handler = handlers['input']?.[0];
-  if (!handler) throw new Error('input handler not registered');
-  const ctx = createMockCtx();
-  const result = await handler({ text: 'COMMIT changes' }, {
-    ...ctx,
-    cwd: '/project',
-  } as ExtensionContext);
-  strictEqual((result as { action: string }).action, 'handled');
-  strictEqual(sentMessages.length, 1);
-  strictEqual(ctx._notifications.length, 1);
+  const harness = await createPiTestHarness(planModeExtension, '/project');
+
+  const sendMessageSpy = mock.fn(() => {}) as unknown as Mock<typeof harness.runtime.sendMessage>;
+  harness.runtime.sendMessage = sendMessageSpy as unknown as typeof harness.runtime.sendMessage;
+
+  const { results, ctx } = await harness.emitEvent('input', { text: 'COMMIT changes' });
+
+  strictEqual((results[0] as { action: string }).action, 'handled');
+  strictEqual(sendMessageSpy.mock.callCount(), 1);
+  strictEqual((ctx.ui.notify as Mock<typeof ctx.ui.notify>).mock.callCount(), 1);
 });
 
 test('input handler: allows non-blocked text in plan mode', async () => {
-  const { pi, handlers, sentMessages } = createMockPi();
-  planModeExtension(pi);
-  const handler = handlers['input']?.[0];
-  if (!handler) throw new Error('input handler not registered');
-  const ctx = createMockCtx();
-  const result = await handler({ text: 'what is the plan?' }, {
-    ...ctx,
-    cwd: '/project',
-  } as ExtensionContext);
-  strictEqual((result as { action: string }).action, 'continue');
-  strictEqual(sentMessages.length, 0);
-  strictEqual(ctx._notifications.length, 0);
+  const harness = await createPiTestHarness(planModeExtension, '/project');
+
+  const sendMessageSpy = mock.fn(() => {}) as unknown as Mock<typeof harness.runtime.sendMessage>;
+  harness.runtime.sendMessage = sendMessageSpy as unknown as typeof harness.runtime.sendMessage;
+
+  const { results, ctx } = await harness.emitEvent('input', { text: 'what is the plan?' });
+
+  strictEqual((results[0] as { action: string }).action, 'continue');
+  strictEqual(sendMessageSpy.mock.callCount(), 0);
+  strictEqual((ctx.ui.notify as Mock<typeof ctx.ui.notify>).mock.callCount(), 0);
 });
 
 test('input handler: allows blocked text when plan mode is disabled', async () => {
-  const { pi, handlers, sentMessages, commands } = createMockPi();
-  planModeExtension(pi);
+  const harness = await createPiTestHarness(planModeExtension, '/project');
+
+  const sendMessageSpy = mock.fn(() => {}) as unknown as Mock<typeof harness.runtime.sendMessage>;
+  harness.runtime.sendMessage = sendMessageSpy as unknown as typeof harness.runtime.sendMessage;
+  harness.runtime.appendEntry = mock.fn(() => {}) as unknown as typeof harness.runtime.appendEntry;
 
   // Toggle plan mode off via /plan command
-  const commandHandler = commands['plan'];
-  if (!commandHandler) throw new Error('command handler not registered');
-  const ctx = createMockCtx();
-  await commandHandler([], { ...ctx, cwd: '/project' } as ExtensionContext);
+  await harness.command('plan').execute('');
 
-  const inputHandler = handlers['input']?.[0];
-  if (!inputHandler) throw new Error('input handler not registered');
-  const result = await inputHandler({ text: 'implement the plan' }, {
-    ...ctx,
-    cwd: '/project',
-  } as ExtensionContext);
-  strictEqual((result as { action: string }).action, 'continue');
-  // sentMessages has the toggle-off message only
-  strictEqual(sentMessages.length, 1);
+  const { results } = await harness.emitEvent('input', { text: 'implement the plan' });
+
+  strictEqual((results[0] as { action: string }).action, 'continue');
+  // sendMessages has the toggle-off message only
+  strictEqual(sendMessageSpy.mock.callCount(), 1);
 });
 
 test('toggle sends visible message when enabling plan mode', async () => {
-  const { pi, sentMessages, commands } = createMockPi();
-  planModeExtension(pi);
+  const harness = await createPiTestHarness(planModeExtension, '/project');
 
-  // Start disabled via --no-plan simulation: toggle on then off
-  const commandHandler = commands['plan'];
-  if (!commandHandler) throw new Error('command handler not registered');
-  const ctx = createMockCtx();
+  const sendMessageSpy = mock.fn(() => {}) as unknown as Mock<typeof harness.runtime.sendMessage>;
+  harness.runtime.sendMessage = sendMessageSpy as unknown as typeof harness.runtime.sendMessage;
+  harness.runtime.appendEntry = mock.fn(() => {}) as unknown as typeof harness.runtime.appendEntry;
 
   // Toggle off (starts on)
-  await commandHandler([], { ...ctx, cwd: '/project' } as ExtensionContext);
+  await harness.command('plan').execute('');
   // Toggle back on
-  await commandHandler([], { ...ctx, cwd: '/project' } as ExtensionContext);
+  await harness.command('plan').execute('');
 
-  const toggleMessages = sentMessages.filter((m) => (m as { customType: string }).customType === 'plan-mode-toggle');
+  const toggleMessages = sendMessageSpy.mock.calls
+    .map((c) => c.arguments[0] as { customType: string; content: string; display: boolean })
+    .filter((m) => m.customType === 'plan-mode-toggle');
   strictEqual(toggleMessages.length, 2);
-  const onMsg = toggleMessages[1] as { customType: string; content: string; display: boolean };
+  const onMsg = toggleMessages[1]!;
   strictEqual(onMsg.display, true);
   ok(onMsg.content.includes('enabled'));
 });
 
 test('toggle sends visible message when disabling plan mode', async () => {
-  const { pi, sentMessages, commands } = createMockPi();
-  planModeExtension(pi);
+  const harness = await createPiTestHarness(planModeExtension, '/project');
 
-  const commandHandler = commands['plan'];
-  if (!commandHandler) throw new Error('command handler not registered');
-  const ctx = createMockCtx();
+  const sendMessageSpy = mock.fn(() => {}) as unknown as Mock<typeof harness.runtime.sendMessage>;
+  harness.runtime.sendMessage = sendMessageSpy as unknown as typeof harness.runtime.sendMessage;
+  harness.runtime.appendEntry = mock.fn(() => {}) as unknown as typeof harness.runtime.appendEntry;
 
   // Toggle off (starts on)
-  await commandHandler([], { ...ctx, cwd: '/project' } as ExtensionContext);
+  await harness.command('plan').execute('');
 
-  const toggleMessages = sentMessages.filter((m) => (m as { customType: string }).customType === 'plan-mode-toggle');
+  const toggleMessages = sendMessageSpy.mock.calls
+    .map((c) => c.arguments[0] as { customType: string; content: string; display: boolean })
+    .filter((m) => m.customType === 'plan-mode-toggle');
   strictEqual(toggleMessages.length, 1);
-  const offMsg = toggleMessages[0] as { customType: string; content: string; display: boolean };
+  const offMsg = toggleMessages[0]!;
   strictEqual(offMsg.display, true);
   ok(offMsg.content.includes('disabled'));
 });
