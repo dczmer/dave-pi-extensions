@@ -19,6 +19,9 @@ const BLOCK_REASON =
   'Blocked: Planning mode active. Present a plan instead — do not make changes. ' +
   'Use /plan to exit planning mode when ready to implement.';
 
+const BLOCKED_INPUT_REPLY =
+  'Plan mode is active. Use /plan to exit planning mode before asking me to implement or commit.';
+
 const RE_ENTRY_PREFIX = (planFilePath: string) => `[PLAN RE-ENTRY]
 A plan file exists at ${planFilePath} from a previous session.
 Read it first. Evaluate whether the current request is the same task or different.
@@ -68,6 +71,16 @@ function updateStatus(_pi: ExtensionAPI, enabled: boolean, ctx: ExtensionContext
   } else {
     ctx.ui.setStatus('plan-mode', undefined);
   }
+}
+
+/**
+ * Check whether raw user input should be short-circuited while plan mode is active.
+ *
+ * @param text - Raw input text from the user.
+ * @returns `true` if the input matches blocked patterns (e.g. "implement ...", "commit ...").
+ */
+export function isBlockedInput(text: string): boolean {
+  return /^(implement|commit)\b/i.test(text.trim());
 }
 
 /**
@@ -279,12 +292,22 @@ export default function (pi: ExtensionAPI): void {
     planModeEnabled = !planModeEnabled;
     if (planModeEnabled) {
       ctx.ui.notify('Plan mode enabled — edit/write/bash blocked');
+      pi.sendMessage({
+        customType: 'plan-mode-toggle',
+        content: 'Plan mode enabled — edit/write/bash blocked. Use /plan to disable.',
+        display: true,
+      });
       if (!currentPlanSlug) {
         currentPlanSlug = generatePlanSlug();
       }
       ensureArtifactsDir(ctx.cwd);
     } else {
       ctx.ui.notify('Plan mode disabled — full access restored');
+      pi.sendMessage({
+        customType: 'plan-mode-toggle',
+        content: 'Plan mode disabled — full access restored.',
+        display: true,
+      });
     }
     updateStatus(pi, planModeEnabled, ctx);
     persist();
@@ -350,6 +373,23 @@ export default function (pi: ExtensionAPI): void {
   pi.on('before_agent_start', async (event, ctx) => {
     const planFilePath = currentPlanSlug ? resolve(ctx.cwd, '.pi', 'artifacts', `${currentPlanSlug}.md`) : undefined;
     return augmentSystemPrompt(planModeEnabled, event.systemPrompt ?? '', planFilePath);
+  });
+
+  // Short-circuit blocked user input while plan mode is active
+  pi.on('input', async (event, ctx) => {
+    if (!planModeEnabled) {
+      return { action: 'continue' };
+    }
+    if (isBlockedInput(event.text)) {
+      ctx.ui.notify(BLOCKED_INPUT_REPLY, 'warning');
+      pi.sendMessage({
+        customType: 'plan-mode-block',
+        content: BLOCKED_INPUT_REPLY,
+        display: true,
+      });
+      return { action: 'handled' };
+    }
+    return { action: 'continue' };
   });
 
   // Restore state on session start

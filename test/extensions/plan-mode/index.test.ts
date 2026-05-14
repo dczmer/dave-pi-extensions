@@ -8,6 +8,7 @@ import {
   evaluateToolCall,
   augmentSystemPrompt,
   maybeRenamePlanArtifact,
+  isBlockedInput,
 } from '../../../extensions/plan-mode/index.ts';
 import planModeExtension from '../../../extensions/plan-mode/index.ts';
 import { PARSE_FAILURE_REASON } from '../../../extensions/plan-mode/bash-guard.ts';
@@ -22,6 +23,10 @@ function createMockCtx() {
         notifications.push({ message, type });
       },
       confirm: () => Promise.resolve(confirmQueue.shift() ?? false),
+      setStatus: () => {},
+      theme: {
+        fg: (_color: string, text: string) => text,
+      },
     },
     _notifications: notifications,
     queueConfirm: (v: boolean) => confirmQueue.push(v),
@@ -31,16 +36,29 @@ function createMockCtx() {
 
 function createMockPi() {
   const handlers: Record<string, Array<(event: unknown, ctx: unknown) => Promise<unknown>>> = {};
+  const commands: Record<string, (args: string[], ctx: ExtensionContext) => Promise<unknown>> = {};
+  const shortcuts: Record<string, (ctx: ExtensionContext) => Promise<unknown>> = {};
   const emitted: Array<{ channel: string; data: unknown }> = [];
+  const sentMessages: Array<unknown> = [];
   const pi = {
     registerFlag: () => {},
-    registerCommand: () => {},
-    registerShortcut: () => {},
+    registerCommand: (
+      name: string,
+      config: { handler: (args: string[], ctx: ExtensionContext) => Promise<unknown> },
+    ) => {
+      commands[name] = config.handler;
+    },
+    registerShortcut: (_key: unknown, config: { handler: (ctx: ExtensionContext) => Promise<unknown> }) => {
+      shortcuts['ctrl-space'] = config.handler;
+    },
     getFlag: () => false,
     on: (event: string, handler: (event: unknown, ctx: unknown) => Promise<unknown>) => {
       (handlers[event] ??= []).push(handler);
     },
     appendEntry: () => {},
+    sendMessage: (msg: unknown) => {
+      sentMessages.push(msg);
+    },
     events: {
       emit: (channel: string, data: unknown) => {
         emitted.push({ channel, data });
@@ -48,8 +66,11 @@ function createMockPi() {
       on: () => () => {},
     },
     _emitted: emitted,
+    _sentMessages: sentMessages,
+    _commands: commands,
+    _shortcuts: shortcuts,
   };
-  return { pi: pi as unknown as ExtensionAPI, handlers, emitted };
+  return { pi: pi as unknown as ExtensionAPI, handlers, emitted, sentMessages, commands, shortcuts };
 }
 
 function withTempDir<T>(fn: (dir: string) => T): T {
@@ -543,4 +564,133 @@ test('tool_call handler: allowed tool does not emit harness:block', async () => 
   } as ExtensionContext);
   strictEqual(result, undefined);
   strictEqual(emitted.filter((e) => e.channel === 'harness:block').length, 0);
+});
+
+test('isBlockedInput: matches implement prefix', () => {
+  strictEqual(isBlockedInput('implement the plan'), true);
+  strictEqual(isBlockedInput('Implement the plan'), true);
+  strictEqual(isBlockedInput('IMPLEMENT'), true);
+});
+
+test('isBlockedInput: matches commit prefix', () => {
+  strictEqual(isBlockedInput('commit the changes'), true);
+  strictEqual(isBlockedInput('Commit changes'), true);
+  strictEqual(isBlockedInput('COMMIT'), true);
+});
+
+test('isBlockedInput: ignores non-matching text', () => {
+  strictEqual(isBlockedInput('plan the implementation'), false);
+  strictEqual(isBlockedInput('how do I commit?'), false);
+  strictEqual(isBlockedInput(''), false);
+  strictEqual(isBlockedInput('hello'), false);
+});
+
+test('input handler: blocks implement message in plan mode', async () => {
+  const { pi, handlers, sentMessages } = createMockPi();
+  planModeExtension(pi);
+  const handler = handlers['input']?.[0];
+  if (!handler) throw new Error('input handler not registered');
+  const ctx = createMockCtx();
+  const result = await handler({ text: 'implement the plan' }, {
+    ...ctx,
+    cwd: '/project',
+  } as ExtensionContext);
+  strictEqual((result as { action: string }).action, 'handled');
+  strictEqual(sentMessages.length, 1);
+  const msg = sentMessages[0] as { customType: string; content: string; display: boolean };
+  strictEqual(msg.customType, 'plan-mode-block');
+  ok(msg.content.includes('Plan mode is active'));
+  strictEqual(msg.display, true);
+  strictEqual(ctx._notifications.length, 1);
+  strictEqual(ctx._notifications[0]!.type, 'warning');
+});
+
+test('input handler: blocks commit message in plan mode', async () => {
+  const { pi, handlers, sentMessages } = createMockPi();
+  planModeExtension(pi);
+  const handler = handlers['input']?.[0];
+  if (!handler) throw new Error('input handler not registered');
+  const ctx = createMockCtx();
+  const result = await handler({ text: 'COMMIT changes' }, {
+    ...ctx,
+    cwd: '/project',
+  } as ExtensionContext);
+  strictEqual((result as { action: string }).action, 'handled');
+  strictEqual(sentMessages.length, 1);
+  strictEqual(ctx._notifications.length, 1);
+});
+
+test('input handler: allows non-blocked text in plan mode', async () => {
+  const { pi, handlers, sentMessages } = createMockPi();
+  planModeExtension(pi);
+  const handler = handlers['input']?.[0];
+  if (!handler) throw new Error('input handler not registered');
+  const ctx = createMockCtx();
+  const result = await handler({ text: 'what is the plan?' }, {
+    ...ctx,
+    cwd: '/project',
+  } as ExtensionContext);
+  strictEqual((result as { action: string }).action, 'continue');
+  strictEqual(sentMessages.length, 0);
+  strictEqual(ctx._notifications.length, 0);
+});
+
+test('input handler: allows blocked text when plan mode is disabled', async () => {
+  const { pi, handlers, sentMessages, commands } = createMockPi();
+  planModeExtension(pi);
+
+  // Toggle plan mode off via /plan command
+  const commandHandler = commands['plan'];
+  if (!commandHandler) throw new Error('command handler not registered');
+  const ctx = createMockCtx();
+  await commandHandler([], { ...ctx, cwd: '/project' } as ExtensionContext);
+
+  const inputHandler = handlers['input']?.[0];
+  if (!inputHandler) throw new Error('input handler not registered');
+  const result = await inputHandler({ text: 'implement the plan' }, {
+    ...ctx,
+    cwd: '/project',
+  } as ExtensionContext);
+  strictEqual((result as { action: string }).action, 'continue');
+  // sentMessages has the toggle-off message only
+  strictEqual(sentMessages.length, 1);
+});
+
+test('toggle sends visible message when enabling plan mode', async () => {
+  const { pi, sentMessages, commands } = createMockPi();
+  planModeExtension(pi);
+
+  // Start disabled via --no-plan simulation: toggle on then off
+  const commandHandler = commands['plan'];
+  if (!commandHandler) throw new Error('command handler not registered');
+  const ctx = createMockCtx();
+
+  // Toggle off (starts on)
+  await commandHandler([], { ...ctx, cwd: '/project' } as ExtensionContext);
+  // Toggle back on
+  await commandHandler([], { ...ctx, cwd: '/project' } as ExtensionContext);
+
+  const toggleMessages = sentMessages.filter((m) => (m as { customType: string }).customType === 'plan-mode-toggle');
+  strictEqual(toggleMessages.length, 2);
+  const onMsg = toggleMessages[1] as { customType: string; content: string; display: boolean };
+  strictEqual(onMsg.display, true);
+  ok(onMsg.content.includes('enabled'));
+});
+
+test('toggle sends visible message when disabling plan mode', async () => {
+  const { pi, sentMessages, commands } = createMockPi();
+  planModeExtension(pi);
+
+  const commandHandler = commands['plan'];
+  if (!commandHandler) throw new Error('command handler not registered');
+  const ctx = createMockCtx();
+
+  // Toggle off (starts on)
+  await commandHandler([], { ...ctx, cwd: '/project' } as ExtensionContext);
+
+  const toggleMessages = sentMessages.filter((m) => (m as { customType: string }).customType === 'plan-mode-toggle');
+  strictEqual(toggleMessages.length, 1);
+  const offMsg = toggleMessages[0] as { customType: string; content: string; display: boolean };
+  strictEqual(offMsg.display, true);
+  ok(offMsg.content.includes('disabled'));
 });
