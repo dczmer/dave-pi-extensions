@@ -1,5 +1,5 @@
 import type { ExtensionAPI, ExtensionContext } from '@mariozechner/pi-coding-agent';
-import { buildEntry, writeEntry, countEntries, getDefaultLogPath, detectCategory } from './logger.ts';
+import { buildEntry, writeEntry, countEntries, getDefaultLogPath, detectCategory, extractBashInfo } from './logger.ts';
 
 interface BlockEvent {
   toolCallId: string;
@@ -53,6 +53,7 @@ export default function (pi: ExtensionAPI): void {
     const session = ctx.sessionManager.getSessionFile() ?? undefined;
     const reason = typeof event.result === 'string' ? event.result : undefined;
     const category = detectCategory(reason);
+    const bashInfo = extractBashInfo(event.result, event.toolName);
 
     const entry = buildEntry(
       new Date().toISOString(),
@@ -63,6 +64,8 @@ export default function (pi: ExtensionAPI): void {
       category,
       'execution',
       reason,
+      bashInfo.exitCode,
+      bashInfo.outputPreview,
     );
 
     const ok = writeEntry(logPath, entry);

@@ -103,7 +103,15 @@ test('tool_execution_end logs error and stashed args', async () => {
     const endHandler = handlers['tool_execution_end']![0]!;
 
     await startHandler({ toolCallId: 'call-1', toolName: 'bash', args: { command: 'ls /bad' } }, ctx);
-    await endHandler({ toolCallId: 'call-1', toolName: 'bash', result: 'No such file', isError: true }, ctx);
+    await endHandler(
+      {
+        toolCallId: 'call-1',
+        toolName: 'bash',
+        result: 'ls: cannot access /bad: No such file or directory\n\nCommand exited with code 1',
+        isError: true,
+      },
+      ctx,
+    );
 
     const content = readFileSync(logPath, 'utf-8').trim();
     ok(content.length > 0);
@@ -112,7 +120,9 @@ test('tool_execution_end logs error and stashed args', async () => {
     strictEqual(entry.callId, 'call-1');
     strictEqual(entry.category, 'execution');
     strictEqual(entry.source, 'execution');
-    strictEqual(entry.reason, 'No such file');
+    strictEqual(entry.reason, 'ls: cannot access /bad: No such file or directory\n\nCommand exited with code 1');
+    strictEqual(entry.exitCode, 1);
+    strictEqual(entry.outputPreview, 'ls: cannot access /bad: No such file or directory');
     strictEqual(entry.session, '/fake/session.json');
     deepStrictEqual(entry.input, { command: 'ls /bad' });
   });
@@ -163,12 +173,18 @@ test('timeout category detected', async () => {
     const ctx = createMockCtx();
     const endHandler = handlers['tool_execution_end']![0]!;
     await endHandler(
-      { toolCallId: 'call-3', toolName: 'bash', result: 'Command timed out after 30000ms', isError: true },
+      {
+        toolCallId: 'call-3',
+        toolName: 'bash',
+        result: 'slow output\n\nCommand timed out after 30000ms',
+        isError: true,
+      },
       ctx,
     );
 
     const entry = JSON.parse(readFileSync(logPath, 'utf-8').trim());
     strictEqual(entry.category, 'timeout');
+    strictEqual(entry.outputPreview, 'slow output');
   });
 });
 
@@ -181,12 +197,18 @@ test('aborted category detected', async () => {
     const ctx = createMockCtx();
     const endHandler = handlers['tool_execution_end']![0]!;
     await endHandler(
-      { toolCallId: 'call-4', toolName: 'bash', result: 'Command aborted by signal', isError: true },
+      {
+        toolCallId: 'call-4',
+        toolName: 'bash',
+        result: 'partial\n\nCommand aborted by signal',
+        isError: true,
+      },
       ctx,
     );
 
     const entry = JSON.parse(readFileSync(logPath, 'utf-8').trim());
     strictEqual(entry.category, 'aborted');
+    strictEqual(entry.outputPreview, 'partial');
   });
 });
 

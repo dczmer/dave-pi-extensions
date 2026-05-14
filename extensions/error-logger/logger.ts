@@ -20,6 +20,10 @@ export interface LogEntry {
   source: string;
   /** Block reason or capped error content. */
   reason?: string;
+  /** Bash exit code, when available. */
+  exitCode?: number;
+  /** Captured bash output preview, when available. */
+  outputPreview?: string;
 }
 
 /** Maximum length for reason text before truncation. */
@@ -27,6 +31,12 @@ export const REASON_CAP = 4096;
 
 /** Truncation marker appended when reason is capped. */
 export const TRUNCATED_MARKER = '[...truncated...]';
+
+/** Lines to keep from bash output for preview. */
+export const OUTPUT_PREVIEW_LINES = 10;
+
+/** Maximum length for bash output preview before truncation. */
+export const OUTPUT_PREVIEW_CAP = 1024;
 
 /**
  * Return default log file path.
@@ -63,6 +73,40 @@ export function detectCategory(reason?: string): LogEntry['category'] {
 }
 
 /**
+ * Extract bash exit code and output preview from a bash error string.
+ *
+ * @param result - Tool result value.
+ * @param toolName - Tool name.
+ * @returns Object with optional exitCode and outputPreview.
+ */
+export function extractBashInfo(result: unknown, toolName: string): { exitCode?: number; outputPreview?: string } {
+  if (toolName !== 'bash' || typeof result !== 'string') return {};
+
+  const exitMatch = result.match(/Command exited with code (\d+)/);
+  const exitCode = exitMatch ? Number(exitMatch[1]) : undefined;
+
+  const separators = ['\n\nCommand exited with code', '\n\nCommand timed out after', '\n\nCommand aborted'];
+  let outputPart: string | undefined;
+  for (const sep of separators) {
+    if (result.includes(sep)) {
+      outputPart = result.split(sep)[0];
+      break;
+    }
+  }
+
+  if (outputPart === undefined) {
+    return exitCode !== undefined ? { exitCode } : {};
+  }
+
+  const preview = outputPart.split('\n').slice(0, OUTPUT_PREVIEW_LINES).join('\n');
+  const info: { exitCode?: number; outputPreview?: string } = { outputPreview: capText(preview, OUTPUT_PREVIEW_CAP) };
+  if (exitCode !== undefined) {
+    info.exitCode = exitCode;
+  }
+  return info;
+}
+
+/**
  * Build a log entry.
  *
  * @param ts - ISO-8601 timestamp string.
@@ -73,6 +117,8 @@ export function detectCategory(reason?: string): LogEntry['category'] {
  * @param category - Failure category.
  * @param source - Source extension or 'execution'.
  * @param reason - Optional reason or error text.
+ * @param exitCode - Optional bash exit code.
+ * @param outputPreview - Optional bash output preview.
  * @returns LogEntry object.
  */
 export function buildEntry(
@@ -84,6 +130,8 @@ export function buildEntry(
   category: LogEntry['category'],
   source: string,
   reason?: string,
+  exitCode?: number,
+  outputPreview?: string,
 ): LogEntry {
   const entry: LogEntry = {
     ts,
@@ -96,6 +144,12 @@ export function buildEntry(
   };
   if (reason !== undefined) {
     entry.reason = capText(reason);
+  }
+  if (exitCode !== undefined) {
+    entry.exitCode = exitCode;
+  }
+  if (outputPreview !== undefined) {
+    entry.outputPreview = outputPreview;
   }
   return entry;
 }

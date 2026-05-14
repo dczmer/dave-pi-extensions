@@ -1,4 +1,4 @@
-import { strictEqual, ok } from 'node:assert';
+import { strictEqual, ok, deepStrictEqual } from 'node:assert';
 import { test } from 'node:test';
 import { mkdtempSync, rmSync, existsSync, appendFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -13,6 +13,9 @@ import {
   detectCategory,
   REASON_CAP,
   TRUNCATED_MARKER,
+  extractBashInfo,
+  OUTPUT_PREVIEW_LINES,
+  OUTPUT_PREVIEW_CAP,
 } from '../../../extensions/error-logger/logger.ts';
 
 function withTempDir<T>(fn: (dir: string) => T): T {
@@ -87,6 +90,75 @@ test('buildEntry caps reason', () => {
     longReason,
   );
   ok(entry.reason!.endsWith(TRUNCATED_MARKER));
+});
+
+test('buildEntry includes exitCode and outputPreview', () => {
+  const entry = buildEntry(
+    '2024-01-01T00:00:00Z',
+    undefined,
+    'bash',
+    'call-1',
+    {},
+    'execution',
+    'execution',
+    'fail',
+    1,
+    'preview',
+  );
+  strictEqual(entry.exitCode, 1);
+  strictEqual(entry.outputPreview, 'preview');
+});
+
+test('buildEntry omits exitCode and outputPreview when undefined', () => {
+  const entry = buildEntry('2024-01-01T00:00:00Z', undefined, 'bash', 'call-1', {}, 'execution', 'execution', 'fail');
+  strictEqual('exitCode' in entry, false);
+  strictEqual('outputPreview' in entry, false);
+});
+
+test('extractBashInfo returns empty for non-bash', () => {
+  const info = extractBashInfo('something', 'read');
+  deepStrictEqual(info, {});
+});
+
+test('extractBashInfo returns empty for non-string result', () => {
+  const info = extractBashInfo(123, 'bash');
+  deepStrictEqual(info, {});
+});
+
+test('extractBashInfo parses exit code and output preview', () => {
+  const result = 'line1\nline2\n\nCommand exited with code 1';
+  const info = extractBashInfo(result, 'bash');
+  strictEqual(info.exitCode, 1);
+  strictEqual(info.outputPreview, 'line1\nline2');
+});
+
+test('extractBashInfo handles timeout', () => {
+  const result = 'some output\n\nCommand timed out after 30 seconds';
+  const info = extractBashInfo(result, 'bash');
+  strictEqual(info.exitCode, undefined);
+  strictEqual(info.outputPreview, 'some output');
+});
+
+test('extractBashInfo handles abort', () => {
+  const result = 'abort msg\n\nCommand aborted';
+  const info = extractBashInfo(result, 'bash');
+  strictEqual(info.exitCode, undefined);
+  strictEqual(info.outputPreview, 'abort msg');
+});
+
+test('extractBashInfo caps preview to OUTPUT_PREVIEW_LINES', () => {
+  const lines = Array.from({ length: 15 }, (_, i) => `line${i + 1}`).join('\n');
+  const result = `${lines}\n\nCommand exited with code 2`;
+  const info = extractBashInfo(result, 'bash');
+  const expected = lines.split('\n').slice(0, OUTPUT_PREVIEW_LINES).join('\n');
+  strictEqual(info.outputPreview, expected);
+});
+
+test('extractBashInfo caps preview by OUTPUT_PREVIEW_CAP', () => {
+  const longLine = 'x'.repeat(OUTPUT_PREVIEW_CAP + 100);
+  const result = `${longLine}\n\nCommand exited with code 3`;
+  const info = extractBashInfo(result, 'bash');
+  ok(info.outputPreview!.endsWith(TRUNCATED_MARKER));
 });
 
 test('writeEntry creates directories and appends', () => {
