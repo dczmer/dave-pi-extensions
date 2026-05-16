@@ -1,6 +1,5 @@
 import { resolve, normalize, basename } from 'node:path';
 import { tmpdir } from 'node:os';
-import { randomUUID } from 'node:crypto';
 
 const ARTIFACT_DIR = '.pi/artifacts';
 const PLAN_PATTERN = /^plan-[a-zA-Z0-9_-]+\.md$/;
@@ -20,44 +19,26 @@ export function isUnderArtifactDir(filePath: string, cwd: string): boolean {
 }
 
 /**
- * Generate a unique plan file basename using today's date and a random fragment.
+ * Generate a plan slug from user input text.
  *
- * @returns A slug like `plan-20260512-a1b2c3d4`.
+ * Sanitizes the text into a kebab-case slug and prefixes
+ * it with today's date and `plan-`.
+ *
+ * @param text - User message or request text.
+ * @returns A slug like `plan-20260512-implement-user-auth`.
  */
-export function generatePlanSlug(): string {
+export function generateSlugFromText(text: string): string {
   const date = new Date().toISOString().slice(0, 10).replace(/-/g, '');
-  const rand = randomUUID().slice(0, 8);
-  return `plan-${date}-${rand}`;
-}
-
-/**
- * Extract a topic slug from plan content.
- *
- * Reads the first non-empty line, sanitizes it, and returns
- * up to `maxWords` words joined by hyphens. The result is capped
- * to `maxLength` characters.
- *
- * @param content - Plan file content.
- * @param maxWords - Maximum words to include (default 6).
- * @param maxLength - Maximum length of the topic portion (default 60).
- * @returns Sanitized slug like `refactor-authentication-middleware-for-better-security`.
- */
-export function extractTopicSlug(content: string, maxWords = 6, maxLength = 60): string {
-  const firstLine = content.split('\n').find((line) => line.trim().length > 0) ?? '';
-  let slug = firstLine
+  const slug = text
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '');
-
-  const words = slug.split('-').filter((w) => w.length > 0);
-  const limited = words.slice(0, maxWords);
-  slug = limited.join('-');
-
-  if (slug.length > maxLength) {
-    slug = slug.slice(0, maxLength).replace(/-+$/, '');
-  }
-
-  return slug;
+    .replace(/^-+|-+$/g, '')
+    .split('-')
+    .filter((w) => w.length > 0)
+    .slice(0, 6)
+    .join('-');
+  const base = slug || 'plan';
+  return `plan-${date}-${base}`;
 }
 
 /**

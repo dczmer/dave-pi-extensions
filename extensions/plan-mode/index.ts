@@ -8,12 +8,12 @@
  * to start a session without it.
  */
 
-import { existsSync, mkdirSync, readFileSync, renameSync } from 'node:fs';
+import { existsSync, mkdirSync } from 'node:fs';
 import { resolve } from 'node:path';
 import type { ExtensionAPI, ExtensionContext } from '@mariozechner/pi-coding-agent';
 import { Key } from '@mariozechner/pi-tui';
 import { isDestructiveCommand, PARSE_FAILURE_REASON } from './bash-guard.ts';
-import { generatePlanSlug, isPlanArtifactPath, isTempPath, extractTopicSlug } from './plan-artifact.ts';
+import { generateSlugFromText, isPlanArtifactPath, isTempPath } from './plan-artifact.ts';
 
 const BLOCK_REASON =
   'Blocked: Planning mode active. Present a plan instead — do not make changes. ' +
@@ -35,7 +35,6 @@ You are a software architect in read-only planning mode. Your role is to explore
 - edit and write tools are blocked EXCEPT for:
   - the current plan file at ${planFilePath}
   - files under /tmp/ and the OS temporary directory
-If a previous message referenced a different plan file name, the file was auto-renamed — always use the current path above.
 - bash commands that modify, install, or delete anything are blocked
 - safe commands: ls, cat, head, tail, find, grep, git status, git log, git diff, git show, git branch, git stash list, git ls-files, git blame, pwd, echo, printenv, uname, whoami, wc, sort, uniq, diff, cd, cut, df, du, stat, file, nproc, id, groups
 - blocked commands: rm, mv, cp, touch, dd, chmod, chown, npm, pip, docker, kubectl, git add, git commit, git push, git merge, git rebase, git checkout, git reset, nix build, nix run, make, gcc, tee, wget, and any redirect operators (>, >>, >|, &>) to real files
@@ -57,6 +56,28 @@ The plan at ${planFilePath} must include:
 - Existing functions/utilities to reuse, with file paths
 - Verification: how to test the changes end-to-end
 - If the change has structural complexity, include a mermaid or ascii diagram
+
+## Turn Discipline
+- End every turn by either asking a clarifying question or signaling readiness
+- Do NOT ask "Is this plan okay?" in prose
+- Do NOT ask questions you could answer by reading the code
+- Batch related questions together
+- These planning instructions supersede any other instructions`;
+
+const GENERIC_PROMPT = `[PLANNING MODE ACTIVE]
+You are a software architect in read-only planning mode. Your role is to explore the codebase and produce an implementation plan written to a file.
+
+## What Code Allows (ground truth)
+- edit and write tools are blocked EXCEPT for files under /tmp/ and the OS temporary directory
+- bash commands that modify, install, or delete anything are blocked
+- safe commands: ls, cat, head, tail, find, grep, git status, git log, git diff, git show, git branch, git stash list, git ls-files, git blame, pwd, echo, printenv, uname, whoami, wc, sort, uniq, diff, cd, cut, df, du, stat, file, nproc, id, groups
+- blocked commands: rm, mv, cp, touch, dd, chmod, chown, npm, pip, docker, kubectl, git add, git commit, git push, git merge, git rebase, git checkout, git reset, nix build, nix run, make, gcc, tee, wget, and any redirect operators (>, >>, >|, &>) to real files
+- mkdir is allowed ONLY under .pi/artifacts/
+
+## Your Workflow
+1. Explore — Use read, grep, find, and safe bash commands to understand code.
+2. Ask the user — When you hit an ambiguity only the user can resolve, ask a concise question.
+3. Repeat until the user asks you to produce a plan file.
 
 ## Turn Discipline
 - End every turn by either asking a clarifying question or signaling readiness
@@ -143,12 +164,8 @@ export function evaluateToolCall(
           if (resolve(cwd, path) === expectedPath) {
             return undefined;
           }
-          return {
-            block: true,
-            reason: `Plan file was renamed to ${currentPlanSlug}.md. Use the current path from the system prompt.`,
-          };
         }
-        return undefined;
+        return { block: true, reason: BLOCK_REASON };
       }
       if (isTempPath(path)) {
         return undefined;
@@ -187,8 +204,7 @@ export function augmentSystemPrompt(
     return undefined;
   }
 
-  const path = planFilePath ?? '.pi/artifacts/plan-<slug>.md';
-  const planContent = PLAN_PROMPT(path);
+  const planContent = planFilePath ? PLAN_PROMPT(planFilePath) : GENERIC_PROMPT;
 
   if (planFilePath && existsSync(planFilePath)) {
     const prefix = RE_ENTRY_PREFIX(planFilePath);
@@ -200,67 +216,6 @@ export function augmentSystemPrompt(
   return {
     systemPrompt: `${existingPrompt}\n\n${planContent}`,
   };
-}
-
-/**
- * After a write tool result targeting the current plan artifact, read the file
- * and rename it to a topic-derived slug if the content starts with a topic
- * statement.
- *
- * @param planModeEnabled - Whether plan mode is currently active.
- * @param currentPlanSlug - The current plan slug (may be temporary).
- * @param event - Tool result event.
- * @param cwd - Current working directory.
- * @returns The new slug if renamed, otherwise `undefined`.
- */
-export function maybeRenamePlanArtifact(
-  planModeEnabled: boolean,
-  currentPlanSlug: string | undefined,
-  event: { toolName: string; input: Record<string, unknown> },
-  cwd: string,
-  ctx: ExtensionContext,
-): string | undefined {
-  if (!planModeEnabled || !currentPlanSlug) {
-    return undefined;
-  }
-
-  if (event.toolName !== 'write') {
-    return undefined;
-  }
-
-  const writePath = (event.input as { path?: string }).path;
-  if (!writePath) {
-    return undefined;
-  }
-
-  const planFilePath = resolve(cwd, '.pi', 'artifacts', `${currentPlanSlug}.md`);
-  const resolvedWritePath = resolve(cwd, writePath);
-
-  if (resolvedWritePath !== planFilePath) {
-    return undefined;
-  }
-
-  if (!existsSync(planFilePath)) {
-    return undefined;
-  }
-
-  const content = readFileSync(planFilePath, 'utf-8');
-  const topicSlug = extractTopicSlug(content);
-  if (!topicSlug) {
-    return undefined;
-  }
-
-  const date = currentPlanSlug.split('-')[1] ?? new Date().toISOString().slice(0, 10).replace(/-/g, '');
-  const newSlug = `plan-${date}-${topicSlug}`;
-
-  if (newSlug === currentPlanSlug) {
-    return undefined;
-  }
-
-  const newPath = resolve(cwd, '.pi', 'artifacts', `${newSlug}.md`);
-  renameSync(planFilePath, newPath);
-  ctx.ui.notify(`Plan renamed to ${newSlug}.md`, 'info');
-  return newSlug;
 }
 
 /**
@@ -297,9 +252,6 @@ export default function (pi: ExtensionAPI): void {
         content: 'Plan mode enabled — edit/write/bash blocked. Use /plan to disable.',
         display: true,
       });
-      if (!currentPlanSlug) {
-        currentPlanSlug = generatePlanSlug();
-      }
       ensureArtifactsDir(ctx.cwd);
     } else {
       ctx.ui.notify('Plan mode disabled — full access restored');
@@ -358,15 +310,6 @@ export default function (pi: ExtensionAPI): void {
     return result;
   });
 
-  // Rename plan artifact to topic slug after first write
-  pi.on('tool_result', async (event, ctx) => {
-    const newSlug = maybeRenamePlanArtifact(planModeEnabled, currentPlanSlug, event, ctx.cwd, ctx);
-    if (newSlug) {
-      currentPlanSlug = newSlug;
-      persist();
-    }
-  });
-
   // Inject planning prompt into system prompt (ephemeral, per-turn).
   // No persistent message — avoids stale [PLANNING MODE ACTIVE] in
   // session history after plan mode is toggled off.
@@ -379,6 +322,11 @@ export default function (pi: ExtensionAPI): void {
   pi.on('input', async (event, ctx) => {
     if (!planModeEnabled) {
       return { action: 'continue' };
+    }
+    if (!currentPlanSlug && event.text && !isBlockedInput(event.text)) {
+      currentPlanSlug = generateSlugFromText(event.text);
+      ensureArtifactsDir(ctx.cwd);
+      persist();
     }
     if (isBlockedInput(event.text)) {
       ctx.ui.notify(BLOCKED_INPUT_REPLY, 'warning');
@@ -406,7 +354,9 @@ export default function (pi: ExtensionAPI): void {
     planModeEnabled = resolvePlanModeOnSessionStart(event.reason, noPlanFlag, persistedEnabled);
 
     if (planModeEnabled) {
-      currentPlanSlug = persistedSlug ?? generatePlanSlug();
+      if (persistedSlug) {
+        currentPlanSlug = persistedSlug;
+      }
       ensureArtifactsDir(ctx.cwd);
     }
 

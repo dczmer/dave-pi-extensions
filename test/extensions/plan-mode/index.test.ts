@@ -1,19 +1,18 @@
 import { strictEqual, ok } from 'node:assert';
 import { test, mock, type Mock } from 'node:test';
-import { writeFileSync, mkdtempSync, rmSync, mkdirSync, existsSync } from 'node:fs';
+import { writeFileSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
   resolvePlanModeOnSessionStart,
   evaluateToolCall,
   augmentSystemPrompt,
-  maybeRenamePlanArtifact,
   isBlockedInput,
 } from '../../../extensions/plan-mode/index.ts';
 import planModeExtension from '../../../extensions/plan-mode/index.ts';
 import { PARSE_FAILURE_REASON } from '../../../extensions/plan-mode/bash-guard.ts';
 import { createPiTestHarness } from '../../utils/pi-harness.ts';
-import { createUIContext, createExtensionContext } from '../../utils/pi-context.ts';
+import { createUIContext, createSessionManagerStub } from '../../utils/pi-context.ts';
 
 function withTempDir<T>(fn: (dir: string) => T): T {
   const dir = mkdtempSync(join(tmpdir(), 'pi-plan-'));
@@ -168,10 +167,12 @@ test('augmentSystemPrompt: omits re-entry prefix when plan file does not exist',
   });
 });
 
-test('augmentSystemPrompt: omits plan path when not provided', () => {
+test('augmentSystemPrompt: returns generic prompt when planFilePath not provided', () => {
   const result = augmentSystemPrompt(true, 'System');
-  ok(result!.systemPrompt.includes('.pi/artifacts/plan-<slug>.md'));
-  strictEqual(result!.systemPrompt.includes('[PLAN RE-ENTRY]'), false);
+  ok(result!.systemPrompt.includes('System'));
+  ok(result!.systemPrompt.includes('PLANNING MODE ACTIVE'));
+  ok(result!.systemPrompt.includes('/tmp/'));
+  strictEqual(result!.systemPrompt.includes('plan file at'), false);
 });
 
 test('evaluateToolCall: allows write to plan artifact in plan mode', () => {
@@ -198,7 +199,7 @@ test('evaluateToolCall: allows write to exact current plan artifact', () => {
   strictEqual(result, undefined);
 });
 
-test('evaluateToolCall: blocks write to non-current plan artifact with rename hint', () => {
+test('evaluateToolCall: blocks write to non-current plan artifact', () => {
   const result = evaluateToolCall(
     true,
     'write',
@@ -208,8 +209,20 @@ test('evaluateToolCall: blocks write to non-current plan artifact with rename hi
     'plan-20260512-abc123',
   );
   strictEqual(result?.block, true);
-  ok(result!.reason.includes('renamed to plan-20260512-abc123.md'));
-  ok(result!.reason.includes('current path'));
+  ok(result!.reason.includes('Planning mode active'));
+});
+
+test('evaluateToolCall: blocks write to plan artifact when no slug set', () => {
+  const result = evaluateToolCall(
+    true,
+    'write',
+    undefined,
+    '.pi/artifacts/plan-20260512-abc123.md',
+    '/project',
+    undefined,
+  );
+  strictEqual(result?.block, true);
+  ok(result!.reason.includes('Planning mode active'));
 });
 
 test('evaluateToolCall: allows write to /tmp in plan mode', () => {
@@ -244,124 +257,6 @@ test('evaluateToolCall: blocks mkdir outside artifact dir in plan mode', () => {
 
 test('evaluateToolCall: allows mkdir outside artifact dir when plan mode is off', () => {
   strictEqual(evaluateToolCall(false, 'bash', 'mkdir other', undefined, '/project'), undefined);
-});
-
-test('maybeRenamePlanArtifact: ignores non-write tool results', () => {
-  withTempDir((dir) => {
-    const ctx = createExtensionContext();
-    const result = maybeRenamePlanArtifact(
-      true,
-      'plan-20260512-abcd1234',
-      { toolName: 'read', input: { path: '.pi/artifacts/plan-20260512-abcd1234.md' } },
-      dir,
-      ctx,
-    );
-    strictEqual(result, undefined);
-  });
-});
-
-test('maybeRenamePlanArtifact: ignores write to non-plan file', () => {
-  withTempDir((dir) => {
-    const ctx = createExtensionContext();
-    const result = maybeRenamePlanArtifact(
-      true,
-      'plan-20260512-abcd1234',
-      { toolName: 'write', input: { path: 'other.md' } },
-      dir,
-      ctx,
-    );
-    strictEqual(result, undefined);
-  });
-});
-
-test('maybeRenamePlanArtifact: ignores when plan mode disabled', () => {
-  withTempDir((dir) => {
-    mkdirSync(join(dir, '.pi', 'artifacts'), { recursive: true });
-    writeFileSync(join(dir, '.pi', 'artifacts', 'plan-20260512-abcd1234.md'), '# Topic here');
-    const ctx = createExtensionContext();
-    const result = maybeRenamePlanArtifact(
-      false,
-      'plan-20260512-abcd1234',
-      { toolName: 'write', input: { path: '.pi/artifacts/plan-20260512-abcd1234.md' } },
-      dir,
-      ctx,
-    );
-    strictEqual(result, undefined);
-  });
-});
-
-test('maybeRenamePlanArtifact: renames plan file based on topic', () => {
-  withTempDir((dir) => {
-    mkdirSync(join(dir, '.pi', 'artifacts'), { recursive: true });
-    writeFileSync(
-      join(dir, '.pi', 'artifacts', 'plan-20260512-abcd1234.md'),
-      'Refactor authentication middleware for better security\n\nContext...',
-    );
-    const ctx = createExtensionContext();
-    const result = maybeRenamePlanArtifact(
-      true,
-      'plan-20260512-abcd1234',
-      { toolName: 'write', input: { path: '.pi/artifacts/plan-20260512-abcd1234.md' } },
-      dir,
-      ctx,
-    );
-    strictEqual(result, 'plan-20260512-refactor-authentication-middleware-for-better-security');
-    strictEqual(existsSync(join(dir, '.pi', 'artifacts', 'plan-20260512-abcd1234.md')), false);
-    strictEqual(
-      existsSync(
-        join(dir, '.pi', 'artifacts', 'plan-20260512-refactor-authentication-middleware-for-better-security.md'),
-      ),
-      true,
-    );
-    strictEqual((ctx.ui.notify as Mock<typeof ctx.ui.notify>).mock.callCount(), 1);
-    ok((ctx.ui.notify as Mock<typeof ctx.ui.notify>).mock.calls[0]!.arguments[0].includes('Plan renamed to'));
-  });
-});
-
-test('maybeRenamePlanArtifact: returns undefined when topic slug matches current', () => {
-  withTempDir((dir) => {
-    mkdirSync(join(dir, '.pi', 'artifacts'), { recursive: true });
-    writeFileSync(join(dir, '.pi', 'artifacts', 'plan-20260512-refactor.md'), 'Refactor\n\nContext...');
-    const ctx = createExtensionContext();
-    const result = maybeRenamePlanArtifact(
-      true,
-      'plan-20260512-refactor',
-      { toolName: 'write', input: { path: '.pi/artifacts/plan-20260512-refactor.md' } },
-      dir,
-      ctx,
-    );
-    strictEqual(result, undefined);
-  });
-});
-
-test('maybeRenamePlanArtifact: returns undefined when no topic found', () => {
-  withTempDir((dir) => {
-    mkdirSync(join(dir, '.pi', 'artifacts'), { recursive: true });
-    writeFileSync(join(dir, '.pi', 'artifacts', 'plan-20260512-abcd1234.md'), '\n\n!!!   \n');
-    const ctx = createExtensionContext();
-    const result = maybeRenamePlanArtifact(
-      true,
-      'plan-20260512-abcd1234',
-      { toolName: 'write', input: { path: '.pi/artifacts/plan-20260512-abcd1234.md' } },
-      dir,
-      ctx,
-    );
-    strictEqual(result, undefined);
-  });
-});
-
-test('maybeRenamePlanArtifact: ignores when currentPlanSlug undefined', () => {
-  withTempDir((dir) => {
-    const ctx = createExtensionContext();
-    const result = maybeRenamePlanArtifact(
-      true,
-      undefined,
-      { toolName: 'write', input: { path: '.pi/artifacts/plan-20260512-abcd1234.md' } },
-      dir,
-      ctx,
-    );
-    strictEqual(result, undefined);
-  });
 });
 
 test('tool_call handler: parse failure with user confirm allows', async () => {
@@ -587,6 +482,7 @@ test('input handler: allows non-blocked text in plan mode', async () => {
 
   const sendMessageSpy = mock.fn(() => {}) as unknown as Mock<typeof harness.runtime.sendMessage>;
   harness.runtime.sendMessage = sendMessageSpy as unknown as typeof harness.runtime.sendMessage;
+  harness.runtime.appendEntry = mock.fn(() => {}) as unknown as typeof harness.runtime.appendEntry;
 
   const { results, ctx } = await harness.emitEvent('input', { text: 'what is the plan?' });
 
@@ -650,4 +546,79 @@ test('toggle sends visible message when disabling plan mode', async () => {
   const offMsg = toggleMessages[0]!;
   strictEqual(offMsg.display, true);
   ok(offMsg.content.includes('disabled'));
+});
+
+test('input handler: generates plan slug from first user input when plan mode active', async () => {
+  const harness = await createPiTestHarness(planModeExtension, '/project');
+  harness.runtime.appendEntry = mock.fn(() => {}) as unknown as typeof harness.runtime.appendEntry;
+
+  const before1 = await harness.emitEvent('before_agent_start', { systemPrompt: 'System' });
+  const genericPrompt = (before1.results[0] as { systemPrompt: string }).systemPrompt;
+  ok(genericPrompt.includes('PLANNING MODE ACTIVE'));
+  ok(genericPrompt.includes('/tmp/'));
+  strictEqual(genericPrompt.includes('plan file at'), false);
+
+  const inputResult = await harness.emitEvent('input', { text: 'Add a caching layer for the API' });
+  strictEqual((inputResult.results[0] as { action: string }).action, 'continue');
+
+  const before2 = await harness.emitEvent('before_agent_start', { systemPrompt: 'System' });
+  const prompt = (before2.results[0] as { systemPrompt: string }).systemPrompt;
+  ok(prompt.includes('PLANNING MODE ACTIVE'));
+  ok(prompt.includes('plan-'));
+  ok(prompt.includes('add-a-caching-layer-for-the'));
+});
+
+test('input handler: does not generate slug when plan mode is disabled', async () => {
+  const harness = await createPiTestHarness(planModeExtension, '/project');
+  harness.runtime.sendMessage = mock.fn(() => {}) as unknown as typeof harness.runtime.sendMessage;
+  harness.runtime.appendEntry = mock.fn(() => {}) as unknown as typeof harness.runtime.appendEntry;
+
+  await harness.command('plan').execute('');
+
+  const inputResult = await harness.emitEvent('input', { text: 'Add a caching layer to the API' });
+  strictEqual((inputResult.results[0] as { action: string }).action, 'continue');
+
+  const before = await harness.emitEvent('before_agent_start', { systemPrompt: 'System' });
+  strictEqual(before.results[0], undefined);
+});
+
+test('session_start: does not generate slug when plan mode enabled and no persisted state', async () => {
+  const harness = await createPiTestHarness(planModeExtension, '/project');
+  harness.runtime.appendEntry = mock.fn(() => {}) as unknown as typeof harness.runtime.appendEntry;
+
+  await harness.emitEvent('session_start', { reason: 'new' });
+
+  const before = await harness.emitEvent('before_agent_start', { systemPrompt: 'System' });
+  const prompt = (before.results[0] as { systemPrompt: string }).systemPrompt;
+  ok(prompt.includes('PLANNING MODE ACTIVE'));
+  ok(prompt.includes('/tmp/'));
+  strictEqual(prompt.includes('plan file at'), false);
+});
+
+test('session_start: restores persisted slug on resume', async () => {
+  const harness = await createPiTestHarness(planModeExtension, '/project');
+  harness.runtime.appendEntry = mock.fn(() => {}) as unknown as typeof harness.runtime.appendEntry;
+
+  await harness.emitEvent(
+    'session_start',
+    { reason: 'startup' },
+    {
+      sessionManager: createSessionManagerStub({
+        getEntries: mock.fn(() => [
+          {
+            id: 'entry-1',
+            parentId: null,
+            timestamp: new Date().toISOString(),
+            type: 'custom',
+            customType: 'plan-mode-state',
+            data: { enabled: true, slug: 'plan-20260512-abc123' },
+          },
+        ]),
+      }),
+    },
+  );
+
+  const before = await harness.emitEvent('before_agent_start', { systemPrompt: 'System' });
+  const prompt = (before.results[0] as { systemPrompt: string }).systemPrompt;
+  ok(prompt.includes('plan-20260512-abc123.md'));
 });
