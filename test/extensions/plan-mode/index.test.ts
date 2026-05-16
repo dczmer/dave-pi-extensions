@@ -11,8 +11,9 @@ import {
 } from '../../../extensions/plan-mode/index.ts';
 import planModeExtension from '../../../extensions/plan-mode/index.ts';
 import { PARSE_FAILURE_REASON } from '../../../extensions/plan-mode/bash-guard.ts';
+import type { ExtensionAPI } from '@mariozechner/pi-coding-agent';
 import { createPiTestHarness } from '../../utils/pi-harness.ts';
-import { createUIContext, createSessionManagerStub } from '../../utils/pi-context.ts';
+import { createUIContext, createSessionManagerStub, createExtensionContext } from '../../utils/pi-context.ts';
 
 function withTempDir<T>(fn: (dir: string) => T): T {
   const dir = mkdtempSync(join(tmpdir(), 'pi-plan-'));
@@ -92,8 +93,10 @@ test('evaluateToolCall: allows other tools in plan mode', () => {
   strictEqual(evaluateToolCall(true, 'grep', undefined), undefined);
 });
 
-test('augmentSystemPrompt: disabled returns undefined', () => {
-  strictEqual(augmentSystemPrompt(false, 'Hello'), undefined);
+test('augmentSystemPrompt: disabled returns disabled marker', () => {
+  const result = augmentSystemPrompt(false, 'Hello');
+  ok(result.systemPrompt.includes('Hello'));
+  ok(result.systemPrompt.includes('[PLAN MODE: DISABLED]'));
 });
 
 test('augmentSystemPrompt: enabled appends planning prompt', () => {
@@ -459,7 +462,7 @@ test('input handler: blocks implement message in plan mode', async () => {
   };
   strictEqual(msg.customType, 'plan-mode-block');
   ok(msg.content.includes('Plan mode is active'));
-  strictEqual(msg.display, true);
+  strictEqual(msg.display, false);
   strictEqual((ctx.ui.notify as Mock<typeof ctx.ui.notify>).mock.callCount(), 1);
   strictEqual((ctx.ui.notify as Mock<typeof ctx.ui.notify>).mock.calls[0]!.arguments[1], 'warning');
 });
@@ -508,7 +511,7 @@ test('input handler: allows blocked text when plan mode is disabled', async () =
   strictEqual(sendMessageSpy.mock.callCount(), 1);
 });
 
-test('toggle sends visible message when enabling plan mode', async () => {
+test('toggle sends hidden message when enabling plan mode', async () => {
   const harness = await createPiTestHarness(planModeExtension, '/project');
 
   const sendMessageSpy = mock.fn(() => {}) as unknown as Mock<typeof harness.runtime.sendMessage>;
@@ -525,11 +528,11 @@ test('toggle sends visible message when enabling plan mode', async () => {
     .filter((m) => m.customType === 'plan-mode-toggle');
   strictEqual(toggleMessages.length, 2);
   const onMsg = toggleMessages[1]!;
-  strictEqual(onMsg.display, true);
+  strictEqual(onMsg.display, false);
   ok(onMsg.content.includes('enabled'));
 });
 
-test('toggle sends visible message when disabling plan mode', async () => {
+test('toggle sends hidden message when disabling plan mode', async () => {
   const harness = await createPiTestHarness(planModeExtension, '/project');
 
   const sendMessageSpy = mock.fn(() => {}) as unknown as Mock<typeof harness.runtime.sendMessage>;
@@ -544,7 +547,7 @@ test('toggle sends visible message when disabling plan mode', async () => {
     .filter((m) => m.customType === 'plan-mode-toggle');
   strictEqual(toggleMessages.length, 1);
   const offMsg = toggleMessages[0]!;
-  strictEqual(offMsg.display, true);
+  strictEqual(offMsg.display, false);
   ok(offMsg.content.includes('disabled'));
 });
 
@@ -579,7 +582,9 @@ test('input handler: does not generate slug when plan mode is disabled', async (
   strictEqual((inputResult.results[0] as { action: string }).action, 'continue');
 
   const before = await harness.emitEvent('before_agent_start', { systemPrompt: 'System' });
-  strictEqual(before.results[0], undefined);
+  const prompt = (before.results[0] as { systemPrompt: string }).systemPrompt;
+  ok(prompt.includes('System'));
+  ok(prompt.includes('[PLAN MODE: DISABLED]'));
 });
 
 test('session_start: does not generate slug when plan mode enabled and no persisted state', async () => {
@@ -621,4 +626,86 @@ test('session_start: restores persisted slug on resume', async () => {
   const before = await harness.emitEvent('before_agent_start', { systemPrompt: 'System' });
   const prompt = (before.results[0] as { systemPrompt: string }).systemPrompt;
   ok(prompt.includes('plan-20260512-abc123.md'));
+});
+
+test('default export registers all handlers even when --no-plan flag is set', () => {
+  const pi = {
+    registerFlag: mock.fn(() => {}),
+    getFlag: mock.fn((name: string) => (name === 'no-plan' ? true : undefined)),
+    registerCommand: mock.fn(() => {}),
+    registerShortcut: mock.fn(() => {}),
+    on: mock.fn(() => {}),
+    sendMessage: mock.fn(() => {}),
+    events: { emit: mock.fn(() => {}) },
+    appendEntry: mock.fn(() => {}),
+  } as unknown as ExtensionAPI;
+
+  planModeExtension(pi);
+
+  strictEqual((pi.registerFlag as Mock<typeof pi.registerFlag>).mock.callCount(), 1);
+  strictEqual((pi.registerCommand as Mock<typeof pi.registerCommand>).mock.callCount(), 1);
+  strictEqual((pi.registerShortcut as Mock<typeof pi.registerShortcut>).mock.callCount(), 1);
+  strictEqual((pi.on as Mock<typeof pi.on>).mock.callCount(), 4);
+});
+
+test('session_start with --no-plan initializes disabled', async () => {
+  const handlers = new Map<string, (event: unknown, ctx: unknown) => Promise<unknown>>();
+  const pi = {
+    registerFlag: mock.fn(() => {}),
+    getFlag: mock.fn((name: string) => (name === 'no-plan' ? true : undefined)),
+    registerCommand: mock.fn(() => {}),
+    registerShortcut: mock.fn(() => {}),
+    on: mock.fn((name: string, handler: (event: unknown, ctx: unknown) => Promise<unknown>) => {
+      handlers.set(name, handler);
+    }),
+    sendMessage: mock.fn(() => {}),
+    events: { emit: mock.fn(() => {}) },
+    appendEntry: mock.fn(() => {}),
+  } as unknown as ExtensionAPI;
+
+  planModeExtension(pi);
+
+  const sessionStartHandler = handlers.get('session_start');
+  ok(sessionStartHandler);
+  const beforeAgentStartHandler = handlers.get('before_agent_start');
+  ok(beforeAgentStartHandler);
+
+  const ctx = createExtensionContext({ cwd: '/project' });
+  await sessionStartHandler!({ reason: 'startup' }, ctx);
+  const result = (await beforeAgentStartHandler!({ systemPrompt: 'System' }, ctx)) as {
+    systemPrompt: string;
+  };
+
+  ok(result.systemPrompt.includes('[PLAN MODE: DISABLED]'));
+});
+
+test('session_start without --no-plan initializes enabled', async () => {
+  const handlers = new Map<string, (event: unknown, ctx: unknown) => Promise<unknown>>();
+  const pi = {
+    registerFlag: mock.fn(() => {}),
+    getFlag: mock.fn(() => false),
+    registerCommand: mock.fn(() => {}),
+    registerShortcut: mock.fn(() => {}),
+    on: mock.fn((name: string, handler: (event: unknown, ctx: unknown) => Promise<unknown>) => {
+      handlers.set(name, handler);
+    }),
+    sendMessage: mock.fn(() => {}),
+    events: { emit: mock.fn(() => {}) },
+    appendEntry: mock.fn(() => {}),
+  } as unknown as ExtensionAPI;
+
+  planModeExtension(pi);
+
+  const sessionStartHandler = handlers.get('session_start');
+  ok(sessionStartHandler);
+  const beforeAgentStartHandler = handlers.get('before_agent_start');
+  ok(beforeAgentStartHandler);
+
+  const ctx = createExtensionContext({ cwd: '/project' });
+  await sessionStartHandler!({ reason: 'startup' }, ctx);
+  const result = (await beforeAgentStartHandler!({ systemPrompt: 'System' }, ctx)) as {
+    systemPrompt: string;
+  };
+
+  ok(result.systemPrompt.includes('PLANNING MODE ACTIVE'));
 });

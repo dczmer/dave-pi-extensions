@@ -185,7 +185,7 @@ export function evaluateToolCall(
 }
 
 /**
- * Augment the system prompt when plan mode is active.
+ * Augment the system prompt with plan-mode state.
  *
  * If the plan artifact file already exists, prepends a re-entry prefix
  * so the model knows to resume the existing plan.
@@ -193,15 +193,17 @@ export function evaluateToolCall(
  * @param planModeEnabled - Whether plan mode is currently active.
  * @param existingPrompt - The current system prompt text.
  * @param planFilePath - Absolute path to the current plan artifact file.
- * @returns Object with augmented prompt if active, otherwise `undefined`.
+ * @returns Object with augmented prompt for every turn.
  */
 export function augmentSystemPrompt(
   planModeEnabled: boolean,
   existingPrompt: string,
   planFilePath?: string,
-): { systemPrompt: string } | undefined {
+): { systemPrompt: string } {
   if (!planModeEnabled) {
-    return undefined;
+    return {
+      systemPrompt: `${existingPrompt}\n\n[PLAN MODE: DISABLED]`,
+    };
   }
 
   const planContent = planFilePath ? PLAN_PROMPT(planFilePath) : GENERIC_PROMPT;
@@ -232,6 +234,13 @@ export function augmentSystemPrompt(
  * @param pi - Extension API instance provided by the pi agent harness.
  */
 export default function (pi: ExtensionAPI): void {
+  // CLI flag
+  pi.registerFlag('no-plan', {
+    description: 'Start without planning mode (plan mode is active by default)',
+    type: 'boolean',
+    default: false,
+  });
+
   let planModeEnabled = true;
   let currentPlanSlug: string | undefined;
 
@@ -250,7 +259,7 @@ export default function (pi: ExtensionAPI): void {
       pi.sendMessage({
         customType: 'plan-mode-toggle',
         content: 'Plan mode enabled — edit/write/bash blocked. Use /plan to disable.',
-        display: true,
+        display: false,
       });
       ensureArtifactsDir(ctx.cwd);
     } else {
@@ -258,19 +267,12 @@ export default function (pi: ExtensionAPI): void {
       pi.sendMessage({
         customType: 'plan-mode-toggle',
         content: 'Plan mode disabled — full access restored.',
-        display: true,
+        display: false,
       });
     }
     updateStatus(pi, planModeEnabled, ctx);
     persist();
   }
-
-  // CLI flag
-  pi.registerFlag('no-plan', {
-    description: 'Start without planning mode (plan mode is active by default)',
-    type: 'boolean',
-    default: false,
-  });
 
   // Command
   pi.registerCommand('plan', {
@@ -333,7 +335,7 @@ export default function (pi: ExtensionAPI): void {
       pi.sendMessage({
         customType: 'plan-mode-block',
         content: BLOCKED_INPUT_REPLY,
-        display: true,
+        display: false,
       });
       return { action: 'handled' };
     }
@@ -342,8 +344,6 @@ export default function (pi: ExtensionAPI): void {
 
   // Restore state on session start
   pi.on('session_start', async (event, ctx) => {
-    const noPlanFlag = pi.getFlag('no-plan') === true;
-
     const entries = ctx.sessionManager.getEntries();
     const persisted = entries
       .filter((e: { type: string; customType?: string }) => e.type === 'custom' && e.customType === 'plan-mode-state')
@@ -351,7 +351,7 @@ export default function (pi: ExtensionAPI): void {
     const persistedEnabled = persisted?.data?.enabled;
     const persistedSlug = persisted?.data?.slug;
 
-    planModeEnabled = resolvePlanModeOnSessionStart(event.reason, noPlanFlag, persistedEnabled);
+    planModeEnabled = resolvePlanModeOnSessionStart(event.reason, pi.getFlag('no-plan') === true, persistedEnabled);
 
     if (planModeEnabled) {
       if (persistedSlug) {
