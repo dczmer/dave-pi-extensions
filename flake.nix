@@ -2,13 +2,13 @@
   description = "Nix devShell for dave-pi-extensions package";
   inputs = {
     flake-utils.url = "github:numtide/flake-utils";
-    dave-shield.url = "github:dczmer/dave-shield";
+    #dave-shield.url = "github:dczmer/dave-shield";
   };
   outputs =
     {
       nixpkgs,
       flake-utils,
-      dave-shield,
+      #dave-shield,
       ...
     }:
     flake-utils.lib.eachDefaultSystem (
@@ -22,27 +22,27 @@
           mdl
           gh
         ];
-        extraCombinators = with dave-shield.lib.${system}.jailCombinators; [
-          # HACK to make npm scripts run
-          (readonly (noescape "/usr/bin/env"))
-        ];
-        daveShield = dave-shield.lib.${system}.daveShield;
-        makeJailedPi = dave-shield.lib.${system}.makeJailedPi;
+        #extraCombinators = with dave-shield.lib.${system}.jailCombinators; [
+        #  # HACK to make npm scripts run
+        #  (readonly (noescape "/usr/bin/env"))
+        #];
+        #daveShield = dave-shield.lib.${system}.daveShield;
+        #makeJailedPi = dave-shield.lib.${system}.makeJailedPi;
       in
-      rec {
-        packages = {
-          jailedPi = makeJailedPi {
-            inherit extraPkgs extraCombinators;
-          };
-          jailedShell = daveShield {
-            exec = pkgs.bash;
-            inherit extraPkgs extraCombinators;
-          };
-        };
+      {
+        #packages = {
+        #  jailedPi = makeJailedPi {
+        #    inherit extraPkgs extraCombinators;
+        #  };
+        #  jailedShell = daveShield {
+        #    exec = pkgs.bash;
+        #    inherit extraPkgs extraCombinators;
+        #  };
+        #};
         devShells = {
           default = pkgs.mkShell {
             buildInputs = [
-              packages.jailedPi
+              # extra tools for the devShell go here
             ]
             ++ extraPkgs;
             shellHook = ''
