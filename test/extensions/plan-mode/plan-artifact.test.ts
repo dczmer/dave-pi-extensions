@@ -3,9 +3,11 @@ import { test } from 'node:test';
 import { tmpdir } from 'node:os';
 import {
   generateSlugFromText,
+  isPathWithinCwd,
   isPlanArtifactPath,
   isTempPath,
   isUnderArtifactDir,
+  resolvePlanFilePath,
 } from '../../../extensions/plan-mode/plan-artifact.ts';
 
 test('generateSlugFromText produces dated slug from text', () => {
@@ -98,4 +100,26 @@ test('isUnderArtifactDir: rejects unrelated path', () => {
 
 test('isUnderArtifactDir: blocks directory traversal', () => {
   strictEqual(isUnderArtifactDir('.pi/artifacts/../../etc', '/project'), false);
+});
+
+// ── Plan path helpers ─────────────────────────────────────────
+
+test('resolvePlanFilePath resolves relative path against cwd', () => {
+  strictEqual(resolvePlanFilePath('plans/foo.md', '/project'), '/project/plans/foo.md');
+});
+
+test('resolvePlanFilePath normalises absolute path', () => {
+  strictEqual(resolvePlanFilePath('/project/plans/../foo.md', '/project'), '/project/foo.md');
+});
+
+test('isPathWithinCwd accepts child path', () => {
+  strictEqual(isPathWithinCwd('plans/foo.md', '/project'), true);
+});
+
+test('isPathWithinCwd rejects path outside cwd', () => {
+  strictEqual(isPathWithinCwd('/other/foo.md', '/project'), false);
+});
+
+test('isPathWithinCwd rejects traversal escape', () => {
+  strictEqual(isPathWithinCwd('/project/../other/foo.md', '/project'), false);
 });

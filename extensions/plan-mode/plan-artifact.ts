@@ -5,6 +5,33 @@ const ARTIFACT_DIR = '.pi/artifacts';
 const PLAN_PATTERN = /^plan-[a-zA-Z0-9_-]+\.md$/;
 
 /**
+ * Resolve a possibly-relative plan file path against cwd and normalise it.
+ *
+ * @param filePath - Relative or absolute path.
+ * @param cwd - Current working directory.
+ * @returns Normalised absolute path.
+ */
+export function resolvePlanFilePath(filePath: string, cwd: string): string {
+  return normalize(resolve(cwd, filePath));
+}
+
+/**
+ * Determine whether a file path stays inside cwd.
+ *
+ * Uses resolve + normalise; symlinks are not considered.
+ *
+ * @param filePath - Absolute or relative path.
+ * @param cwd - Current working directory.
+ * @returns `true` if the resolved path is within cwd.
+ */
+export function isPathWithinCwd(filePath: string, cwd: string): boolean {
+  const absolute = resolvePlanFilePath(filePath, cwd);
+  const normCwd = normalize(resolve(cwd)) + '/';
+  const normPath = absolute + '/';
+  return absolute === normalize(resolve(cwd)) || normPath.startsWith(normCwd);
+}
+
+/**
  * Determine whether a file path resolves inside the plan artifact directory.
  *
  * @param filePath - Path from the tool call (absolute or relative).

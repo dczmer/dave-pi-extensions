@@ -4,16 +4,23 @@
  * Toggle read-only planning mode. Blocks edit/write tools and
  * destructive bash commands. Injects planning instructions into
  * system prompt.
- * Plan mode is active by default. Use /plan to toggle, or --no-plan
- * to start a session without it.
+ * Plan mode is active by default. Use /plan to toggle, /plan <path>
+ * to switch plan files, or --no-plan to start a session without it.
+ * Use --plan-file <path> to start with a specific plan file.
  */
 
-import { existsSync, mkdirSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { existsSync, mkdirSync, statSync } from 'node:fs';
+import { resolve, normalize } from 'node:path';
 import type { ExtensionAPI, ExtensionContext } from '@mariozechner/pi-coding-agent';
 import { Key } from '@mariozechner/pi-tui';
 import { isDestructiveCommand, PARSE_FAILURE_REASON } from './bash-guard.ts';
-import { generateSlugFromText, isPlanArtifactPath, isTempPath } from './plan-artifact.ts';
+import {
+  generateSlugFromText,
+  isPathWithinCwd,
+  isPlanArtifactPath,
+  isTempPath,
+  resolvePlanFilePath,
+} from './plan-artifact.ts';
 
 const BLOCK_REASON =
   'Blocked: Planning mode active. Present a plan instead — do not make changes. ' +
@@ -105,6 +112,41 @@ export function isBlockedInput(text: string): boolean {
 }
 
 /**
+ * Extract a plan file path from natural-language user input.
+ *
+ * Supported patterns: "load plan from PATH", "use plan at PATH",
+ * "refine plan PATH", "switch plan to PATH", "continue plan PATH".
+ * Paths may be quoted to contain spaces; one surrounding pair is stripped.
+ *
+ * @param text - Raw user input.
+ * @returns The raw path string (still quoted if present), or undefined.
+ */
+export function extractPlanPathFromInput(text: string): string | undefined {
+  const trimmed = text.trim();
+  const match = trimmed.match(
+    /^(?:load plan from|load and refine|use plan at|use plan|refine plan|switch plan to|continue plan)\s+(.+)$/i,
+  );
+  return match?.[1];
+}
+
+/**
+ * Strip one pair of surrounding quotes from a path argument.
+ *
+ * @param rawPath - Path that may be wrapped in quotes.
+ * @returns Path with surrounding quotes removed.
+ */
+function stripQuotes(rawPath: string): string {
+  if (rawPath.length >= 2) {
+    const first = rawPath[0];
+    const last = rawPath[rawPath.length - 1];
+    if ((first === '"' && last === '"') || (first === "'" && last === "'")) {
+      return rawPath.slice(1, -1);
+    }
+  }
+  return rawPath;
+}
+
+/**
  * Determine whether plan mode should be enabled when a session starts.
  *
  * @param reason - Why the session started (`'new'` for /new, anything else for startup/resume).
@@ -142,6 +184,7 @@ export function resolvePlanModeOnSessionStart(
  * @param command - For `bash` tool, the command string (trimmed, if present).
  * @param path - For `edit`/`write` tools, the target file path.
  * @param cwd - Current working directory for path resolution.
+ * @param currentPlanPath - Absolute path to the active plan file, if any.
  * @returns Block instruction if the call should be blocked, otherwise `undefined`.
  */
 export function evaluateToolCall(
@@ -150,7 +193,7 @@ export function evaluateToolCall(
   command?: string,
   path?: string,
   cwd?: string,
-  currentPlanSlug?: string,
+  currentPlanPath?: string,
 ): { block: true; reason: string } | undefined {
   if (!planModeEnabled) {
     return undefined;
@@ -158,14 +201,9 @@ export function evaluateToolCall(
 
   if (toolName === 'edit' || toolName === 'write') {
     if (path && cwd) {
-      if (isPlanArtifactPath(path, cwd)) {
-        if (currentPlanSlug) {
-          const expectedPath = resolve(cwd, '.pi', 'artifacts', `${currentPlanSlug}.md`);
-          if (resolve(cwd, path) === expectedPath) {
-            return undefined;
-          }
-        }
-        return { block: true, reason: BLOCK_REASON };
+      const resolved = resolve(cwd, path);
+      if (currentPlanPath && normalize(resolved) === normalize(currentPlanPath)) {
+        return undefined;
       }
       if (isTempPath(path)) {
         return undefined;
@@ -223,52 +261,103 @@ export function augmentSystemPrompt(
 /**
  * Register the plan-mode extension.
  *
- * Installs a CLI flag (`--no-plan`), a slash command (`/plan`), a keyboard
- * shortcut (Ctrl-Space), and event hooks that enforce read-only mode.
+ * Installs CLI flags (`--no-plan`, `--plan-file`), a slash command (`/plan`),
+ * a keyboard shortcut (Ctrl-Space), and event hooks that enforce read-only mode.
  * Plan mode is active by default; pass `--no-plan` to disable on startup.
  * When active, edit/write tools and destructive bash commands are blocked,
  * and a planning prompt is injected into the system message. Toggle state
  * is persisted in session history so it survives restarts. A new session
- * started with `/new` always re-enables plan mode (unless `--no-plan` is set).
+ * started with `/new` always re-enables plan mode (unless `--no-plan` is set)
+ * and ignores any custom plan file.
  *
  * @param pi - Extension API instance provided by the pi agent harness.
  */
 export default function (pi: ExtensionAPI): void {
-  // CLI flag
+  // CLI flags
   pi.registerFlag('no-plan', {
     description: 'Start without planning mode (plan mode is active by default)',
     type: 'boolean',
     default: false,
   });
 
+  pi.registerFlag('plan-file', {
+    description: 'Start plan mode with a specific plan file path',
+    type: 'string',
+  });
+
   let planModeEnabled = true;
-  let currentPlanSlug: string | undefined;
+  let currentPlanPath: string | undefined;
 
   function persist(): void {
-    pi.appendEntry('plan-mode-state', { enabled: planModeEnabled, slug: currentPlanSlug });
+    const entry: { enabled: boolean; slug?: string; planPath?: string } = { enabled: planModeEnabled };
+    if (currentPlanPath) {
+      entry.planPath = currentPlanPath;
+    }
+    pi.appendEntry('plan-mode-state', entry);
   }
 
   function ensureArtifactsDir(cwd: string): void {
     mkdirSync(resolve(cwd, '.pi', 'artifacts'), { recursive: true });
   }
 
+  function notifyEnabled(ctx: ExtensionContext): void {
+    ctx.ui.notify('Plan mode enabled — edit/write/bash blocked');
+    pi.sendMessage({
+      customType: 'plan-mode-toggle',
+      content: 'Plan mode enabled — edit/write/bash blocked. Use /plan to disable.',
+      display: false,
+    });
+  }
+
+  function notifyDisabled(ctx: ExtensionContext): void {
+    ctx.ui.notify('Plan mode disabled — full access restored');
+    pi.sendMessage({
+      customType: 'plan-mode-toggle',
+      content: 'Plan mode disabled — full access restored.',
+      display: false,
+    });
+  }
+
+  function setPlanPath(
+    cwd: string,
+    rawPath: string,
+    ctx: ExtensionContext,
+    options: { notify?: boolean } = {},
+  ): { ok: true; path: string } | { ok: false; reason: string } {
+    const unquoted = stripQuotes(rawPath);
+    const resolved = resolvePlanFilePath(unquoted, cwd);
+
+    if (!isPathWithinCwd(resolved, cwd)) {
+      const reason = `Plan file path must be inside project directory: ${rawPath}`;
+      if (options.notify !== false) ctx.ui.notify(reason, 'warning');
+      return { ok: false, reason };
+    }
+
+    try {
+      const stats = statSync(resolved);
+      if (stats.isDirectory()) {
+        const reason = `Plan file path is a directory: ${rawPath}`;
+        if (options.notify !== false) ctx.ui.notify(reason, 'warning');
+        return { ok: false, reason };
+      }
+    } catch {
+      // File does not exist yet; allow it.
+    }
+
+    currentPlanPath = resolved;
+    persist();
+    if (options.notify !== false) {
+      ctx.ui.notify(`Plan file set to ${resolved}`);
+    }
+    return { ok: true, path: resolved };
+  }
+
   function toggle(ctx: ExtensionContext): void {
     planModeEnabled = !planModeEnabled;
     if (planModeEnabled) {
-      ctx.ui.notify('Plan mode enabled — edit/write/bash blocked');
-      pi.sendMessage({
-        customType: 'plan-mode-toggle',
-        content: 'Plan mode enabled — edit/write/bash blocked. Use /plan to disable.',
-        display: false,
-      });
-      ensureArtifactsDir(ctx.cwd);
+      notifyEnabled(ctx);
     } else {
-      ctx.ui.notify('Plan mode disabled — full access restored');
-      pi.sendMessage({
-        customType: 'plan-mode-toggle',
-        content: 'Plan mode disabled — full access restored.',
-        display: false,
-      });
+      notifyDisabled(ctx);
     }
     updateStatus(pi, planModeEnabled, ctx);
     persist();
@@ -276,8 +365,21 @@ export default function (pi: ExtensionAPI): void {
 
   // Command
   pi.registerCommand('plan', {
-    description: 'Toggle planning mode',
-    handler: async (_args, ctx) => toggle(ctx),
+    description: 'Toggle planning mode or switch to a plan file',
+    handler: async (args, ctx) => {
+      const rawPath = args.trim();
+      if (!rawPath) {
+        toggle(ctx);
+        return;
+      }
+      const result = setPlanPath(ctx.cwd, rawPath, ctx);
+      if (result.ok && !planModeEnabled) {
+        planModeEnabled = true;
+        notifyEnabled(ctx);
+        updateStatus(pi, true, ctx);
+        persist();
+      }
+    },
   });
 
   // Shortcut
@@ -290,7 +392,7 @@ export default function (pi: ExtensionAPI): void {
   pi.on('tool_call', async (event, ctx) => {
     const command = (event.input as { command?: string }).command?.trim();
     const path = (event.input as { path?: string }).path;
-    const result = evaluateToolCall(planModeEnabled, event.toolName, command, path, ctx.cwd, currentPlanSlug);
+    const result = evaluateToolCall(planModeEnabled, event.toolName, command, path, ctx.cwd, currentPlanPath);
     if (result) {
       pi.events.emit('harness:block', {
         toolCallId: event.toolCallId,
@@ -315,9 +417,8 @@ export default function (pi: ExtensionAPI): void {
   // Inject planning prompt into system prompt (ephemeral, per-turn).
   // No persistent message — avoids stale [PLANNING MODE ACTIVE] in
   // session history after plan mode is toggled off.
-  pi.on('before_agent_start', async (event, ctx) => {
-    const planFilePath = currentPlanSlug ? resolve(ctx.cwd, '.pi', 'artifacts', `${currentPlanSlug}.md`) : undefined;
-    return augmentSystemPrompt(planModeEnabled, event.systemPrompt ?? '', planFilePath);
+  pi.on('before_agent_start', async (event) => {
+    return augmentSystemPrompt(planModeEnabled, event.systemPrompt ?? '', currentPlanPath);
   });
 
   // Short-circuit blocked user input while plan mode is active
@@ -325,11 +426,22 @@ export default function (pi: ExtensionAPI): void {
     if (!planModeEnabled) {
       return { action: 'continue' };
     }
-    if (!currentPlanSlug && event.text && !isBlockedInput(event.text)) {
-      currentPlanSlug = generateSlugFromText(event.text);
+
+    const extractedPath = extractPlanPathFromInput(event.text);
+    if (extractedPath) {
+      const result = setPlanPath(ctx.cwd, extractedPath, ctx);
+      if (!result.ok) {
+        return { action: 'handled' };
+      }
+    }
+
+    if (!currentPlanPath && event.text && !isBlockedInput(event.text)) {
+      const slug = generateSlugFromText(event.text);
+      currentPlanPath = resolve(ctx.cwd, '.pi', 'artifacts', `${slug}.md`);
       ensureArtifactsDir(ctx.cwd);
       persist();
     }
+
     if (isBlockedInput(event.text)) {
       ctx.ui.notify(BLOCKED_INPUT_REPLY, 'warning');
       pi.sendMessage({
@@ -339,6 +451,7 @@ export default function (pi: ExtensionAPI): void {
       });
       return { action: 'handled' };
     }
+
     return { action: 'continue' };
   });
 
@@ -347,17 +460,39 @@ export default function (pi: ExtensionAPI): void {
     const entries = ctx.sessionManager.getEntries();
     const persisted = entries
       .filter((e: { type: string; customType?: string }) => e.type === 'custom' && e.customType === 'plan-mode-state')
-      .pop() as { data?: { enabled: boolean; slug?: string } } | undefined;
+      .pop() as { data?: { enabled: boolean; slug?: string; planPath?: string } } | undefined;
     const persistedEnabled = persisted?.data?.enabled;
     const persistedSlug = persisted?.data?.slug;
+    const persistedPath = persisted?.data?.planPath;
 
-    planModeEnabled = resolvePlanModeOnSessionStart(event.reason, pi.getFlag('no-plan') === true, persistedEnabled);
+    const noPlanFlag = pi.getFlag('no-plan') === true;
+    const planFileFlag = pi.getFlag('plan-file') as string | undefined;
 
-    if (planModeEnabled) {
-      if (persistedSlug) {
-        currentPlanSlug = persistedSlug;
+    if (planFileFlag && noPlanFlag) {
+      throw new Error('Cannot use --plan-file with --no-plan');
+    }
+
+    planModeEnabled = resolvePlanModeOnSessionStart(event.reason, noPlanFlag, persistedEnabled);
+    currentPlanPath = undefined;
+
+    if (planModeEnabled && event.reason !== 'new') {
+      if (planFileFlag) {
+        const result = setPlanPath(ctx.cwd, planFileFlag, ctx, { notify: false });
+        if (!result.ok) {
+          ctx.ui.notify(`Invalid --plan-file: ${result.reason}`, 'warning');
+        }
+      } else if (persistedPath && isPathWithinCwd(persistedPath, ctx.cwd)) {
+        currentPlanPath = resolvePlanFilePath(persistedPath, ctx.cwd);
+      } else if (persistedSlug) {
+        currentPlanPath = resolve(ctx.cwd, '.pi', 'artifacts', `${persistedSlug}.md`);
       }
-      ensureArtifactsDir(ctx.cwd);
+    }
+
+    if (planModeEnabled && currentPlanPath && isPathWithinCwd(currentPlanPath, ctx.cwd)) {
+      // Only auto-create artifacts dir for auto-generated paths.
+      if (isPlanArtifactPath(currentPlanPath, ctx.cwd)) {
+        ensureArtifactsDir(ctx.cwd);
+      }
     }
 
     updateStatus(pi, planModeEnabled, ctx);

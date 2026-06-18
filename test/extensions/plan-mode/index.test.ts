@@ -1,12 +1,13 @@
-import { strictEqual, ok } from 'node:assert';
+import { strictEqual, ok, rejects } from 'node:assert';
 import { test, mock, type Mock } from 'node:test';
-import { writeFileSync } from 'node:fs';
+import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import {
   resolvePlanModeOnSessionStart,
   evaluateToolCall,
   augmentSystemPrompt,
   isBlockedInput,
+  extractPlanPathFromInput,
 } from '../../../extensions/plan-mode/index.ts';
 import planModeExtension from '../../../extensions/plan-mode/index.ts';
 import { PARSE_FAILURE_REASON } from '../../../extensions/plan-mode/bash-guard.ts';
@@ -170,44 +171,44 @@ test('augmentSystemPrompt: returns generic prompt when planFilePath not provided
   strictEqual(result!.systemPrompt.includes('plan file at'), false);
 });
 
-test('evaluateToolCall: allows write to plan artifact in plan mode', () => {
+test('evaluateToolCall: allows write to current plan path in plan mode', () => {
   const result = evaluateToolCall(
     true,
     'write',
     undefined,
     '.pi/artifacts/plan-20260512-abc123.md',
     '/project',
-    'plan-20260512-abc123',
+    '/project/.pi/artifacts/plan-20260512-abc123.md',
   );
   strictEqual(result, undefined);
 });
 
-test('evaluateToolCall: allows write to exact current plan artifact', () => {
+test('evaluateToolCall: allows write to exact current plan path', () => {
   const result = evaluateToolCall(
     true,
     'write',
     undefined,
-    '.pi/artifacts/plan-20260512-abc123.md',
+    '/project/.pi/artifacts/plan-20260512-abc123.md',
     '/project',
-    'plan-20260512-abc123',
+    '/project/.pi/artifacts/plan-20260512-abc123.md',
   );
   strictEqual(result, undefined);
 });
 
-test('evaluateToolCall: blocks write to non-current plan artifact', () => {
+test('evaluateToolCall: blocks write to non-current plan path', () => {
   const result = evaluateToolCall(
     true,
     'write',
     undefined,
     '.pi/artifacts/plan-20260512-oldslug.md',
     '/project',
-    'plan-20260512-abc123',
+    '/project/.pi/artifacts/plan-20260512-abc123.md',
   );
   strictEqual(result?.block, true);
   ok(result!.reason.includes('Planning mode active'));
 });
 
-test('evaluateToolCall: blocks write to plan artifact when no slug set', () => {
+test('evaluateToolCall: blocks write to plan artifact when no path set', () => {
   const result = evaluateToolCall(
     true,
     'write',
@@ -647,7 +648,7 @@ test('default export registers all handlers even when --no-plan flag is set', ()
 
   planModeExtension(pi as unknown as ExtensionAPI);
 
-  strictEqual(pi.registerFlag.mock.callCount(), 1);
+  strictEqual(pi.registerFlag.mock.callCount(), 2);
   strictEqual(pi.registerCommand.mock.callCount(), 1);
   strictEqual(pi.registerShortcut.mock.callCount(), 1);
   strictEqual(pi.on.mock.callCount(), 4);
@@ -702,5 +703,443 @@ test('session_start without --no-plan initializes enabled', async () => {
     };
 
     ok(result.systemPrompt.includes('PLANNING MODE ACTIVE'));
+  });
+});
+
+// ── Natural-language path detection ───────────────────────────
+
+test('extractPlanPathFromInput matches load plan from', () => {
+  strictEqual(extractPlanPathFromInput('load plan from plans/foo.md'), 'plans/foo.md');
+});
+
+test('extractPlanPathFromInput matches load and refine', () => {
+  strictEqual(extractPlanPathFromInput('load and refine plans/foo.md'), 'plans/foo.md');
+});
+
+test('extractPlanPathFromInput matches use plan at', () => {
+  strictEqual(extractPlanPathFromInput('use plan at plans/foo.md'), 'plans/foo.md');
+});
+
+test('extractPlanPathFromInput matches refine plan', () => {
+  strictEqual(extractPlanPathFromInput('refine plan plans/foo.md'), 'plans/foo.md');
+});
+
+test('extractPlanPathFromInput matches switch plan to', () => {
+  strictEqual(extractPlanPathFromInput('switch plan to plans/foo.md'), 'plans/foo.md');
+});
+
+test('extractPlanPathFromInput matches continue plan', () => {
+  strictEqual(extractPlanPathFromInput('continue plan plans/foo.md'), 'plans/foo.md');
+});
+
+test('extractPlanPathFromInput returns undefined for unrelated text', () => {
+  strictEqual(extractPlanPathFromInput('what is the plan?'), undefined);
+});
+
+test('extractPlanPathFromInput preserves quoted path', () => {
+  strictEqual(extractPlanPathFromInput('load plan from "plans/my plan.md"'), '"plans/my plan.md"');
+});
+
+// ── CLI flag --plan-file ──────────────────────────────────────
+
+test('session_start: --plan-file existing file injects re-entry prefix', async () => {
+  await withTempDir('pi-plan-', async (dir) => {
+    mkdirSync(join(dir, 'plans'), { recursive: true });
+    const planPath = join(dir, 'plans', 'PLAN_TMUX-SUBAGENTS.md');
+    writeFileSync(planPath, '# Existing plan');
+
+    const handlers = new Map<string, (event: unknown, ctx: unknown) => Promise<unknown>>();
+    const pi = createMockExtensionAPI({
+      getFlag: (name: string) => (name === 'plan-file' ? 'plans/PLAN_TMUX-SUBAGENTS.md' : undefined),
+    });
+    pi.on = ((name: string, handler: (event: unknown, ctx: unknown) => Promise<unknown>) => {
+      handlers.set(name, handler);
+    }) as MockedExtensionAPI['on'];
+
+    planModeExtension(pi as unknown as ExtensionAPI);
+
+    const sessionStartHandler = handlers.get('session_start');
+    ok(sessionStartHandler);
+    const beforeAgentStartHandler = handlers.get('before_agent_start');
+    ok(beforeAgentStartHandler);
+
+    const ctx = createExtensionContext({ cwd: dir });
+    await sessionStartHandler!({ reason: 'startup' }, ctx);
+    const result = (await beforeAgentStartHandler!({ systemPrompt: 'System' }, ctx)) as {
+      systemPrompt: string;
+    };
+
+    ok(result.systemPrompt.includes('[PLAN RE-ENTRY]'));
+    ok(result.systemPrompt.includes(planPath));
+  });
+});
+
+test('session_start: --plan-file non-existing file injects normal planning prompt', async () => {
+  await withTempDir('pi-plan-', async (dir) => {
+    mkdirSync(join(dir, 'plans'), { recursive: true });
+    const planPath = join(dir, 'plans', 'PLAN_NEW.md');
+
+    const handlers = new Map<string, (event: unknown, ctx: unknown) => Promise<unknown>>();
+    const pi = createMockExtensionAPI({
+      getFlag: (name: string) => (name === 'plan-file' ? 'plans/PLAN_NEW.md' : undefined),
+    });
+    pi.on = ((name: string, handler: (event: unknown, ctx: unknown) => Promise<unknown>) => {
+      handlers.set(name, handler);
+    }) as MockedExtensionAPI['on'];
+
+    planModeExtension(pi as unknown as ExtensionAPI);
+
+    const sessionStartHandler = handlers.get('session_start');
+    ok(sessionStartHandler);
+    const beforeAgentStartHandler = handlers.get('before_agent_start');
+    ok(beforeAgentStartHandler);
+
+    const ctx = createExtensionContext({ cwd: dir });
+    await sessionStartHandler!({ reason: 'startup' }, ctx);
+    const result = (await beforeAgentStartHandler!({ systemPrompt: 'System' }, ctx)) as {
+      systemPrompt: string;
+    };
+
+    strictEqual(result.systemPrompt.includes('[PLAN RE-ENTRY]'), false);
+    ok(result.systemPrompt.includes('PLANNING MODE ACTIVE'));
+    ok(result.systemPrompt.includes(planPath));
+  });
+});
+
+test('session_start: --plan-file with --no-plan raises error', async () => {
+  await withTempDir('pi-plan-', async (dir) => {
+    const handlers = new Map<string, (event: unknown, ctx: unknown) => Promise<unknown>>();
+    const pi = createMockExtensionAPI({
+      getFlag: (name: string) => {
+        if (name === 'no-plan') return true;
+        if (name === 'plan-file') return 'plans/foo.md';
+        return undefined;
+      },
+    });
+    pi.on = ((name: string, handler: (event: unknown, ctx: unknown) => Promise<unknown>) => {
+      handlers.set(name, handler);
+    }) as MockedExtensionAPI['on'];
+
+    planModeExtension(pi as unknown as ExtensionAPI);
+
+    const sessionStartHandler = handlers.get('session_start');
+    ok(sessionStartHandler);
+
+    const ctx = createExtensionContext({ cwd: dir });
+    await rejects(sessionStartHandler!({ reason: 'startup' }, ctx), /Cannot use --plan-file with --no-plan/);
+  });
+});
+
+test('session_start: reason new ignores --plan-file', async () => {
+  await withTempDir('pi-plan-', async (dir) => {
+    mkdirSync(join(dir, 'plans'), { recursive: true });
+    const handlers = new Map<string, (event: unknown, ctx: unknown) => Promise<unknown>>();
+    const pi = createMockExtensionAPI({
+      getFlag: (name: string) => (name === 'plan-file' ? 'plans/PLAN_TMUX-SUBAGENTS.md' : undefined),
+    });
+    pi.on = ((name: string, handler: (event: unknown, ctx: unknown) => Promise<unknown>) => {
+      handlers.set(name, handler);
+    }) as MockedExtensionAPI['on'];
+
+    planModeExtension(pi as unknown as ExtensionAPI);
+
+    const sessionStartHandler = handlers.get('session_start');
+    ok(sessionStartHandler);
+    const beforeAgentStartHandler = handlers.get('before_agent_start');
+    ok(beforeAgentStartHandler);
+
+    const ctx = createExtensionContext({ cwd: dir });
+    await sessionStartHandler!({ reason: 'new' }, ctx);
+    const result = (await beforeAgentStartHandler!({ systemPrompt: 'System' }, ctx)) as {
+      systemPrompt: string;
+    };
+
+    ok(result.systemPrompt.includes('PLANNING MODE ACTIVE'));
+    strictEqual(result.systemPrompt.includes('PLAN_TMUX-SUBAGENTS.md'), false);
+  });
+});
+
+// ── /plan <path> command ──────────────────────────────────────
+
+test('/plan <path> switches active plan file', async () => {
+  await withTempDir('pi-plan-', async (dir) => {
+    mkdirSync(join(dir, 'plans'), { recursive: true });
+    const harness = await createPiTestHarness(planModeExtension, dir);
+    harness.runtime.sendMessage = mock.fn(() => {}) as unknown as typeof harness.runtime.sendMessage;
+    harness.runtime.appendEntry = mock.fn(() => {}) as unknown as typeof harness.runtime.appendEntry;
+
+    await harness.command('plan').execute('plans/PLAN_TMUX-SUBAGENTS.md');
+
+    const before = await harness.emitEvent('before_agent_start', { systemPrompt: 'System' });
+    const prompt = (before.results[0] as { systemPrompt: string }).systemPrompt;
+    ok(prompt.includes('PLAN_TMUX-SUBAGENTS.md'));
+  });
+});
+
+test('/plan <path> enables plan mode when disabled', async () => {
+  await withTempDir('pi-plan-', async (dir) => {
+    mkdirSync(join(dir, 'plans'), { recursive: true });
+    const harness = await createPiTestHarness(planModeExtension, dir);
+    harness.runtime.sendMessage = mock.fn(() => {}) as unknown as typeof harness.runtime.sendMessage;
+    harness.runtime.appendEntry = mock.fn(() => {}) as unknown as typeof harness.runtime.appendEntry;
+
+    await harness.command('plan').execute('');
+    const beforeDisabled = await harness.emitEvent('before_agent_start', { systemPrompt: 'System' });
+    ok((beforeDisabled.results[0] as { systemPrompt: string }).systemPrompt.includes('[PLAN MODE: DISABLED]'));
+
+    await harness.command('plan').execute('plans/PLAN_TMUX-SUBAGENTS.md');
+    const beforeEnabled = await harness.emitEvent('before_agent_start', { systemPrompt: 'System' });
+    const prompt = (beforeEnabled.results[0] as { systemPrompt: string }).systemPrompt;
+    ok(prompt.includes('PLANNING MODE ACTIVE'));
+    ok(prompt.includes('PLAN_TMUX-SUBAGENTS.md'));
+  });
+});
+
+test('/plan <path> rejects path outside cwd', async () => {
+  await withTempDir('pi-plan-', async (dir) => {
+    const harness = await createPiTestHarness(planModeExtension, dir);
+    harness.runtime.sendMessage = mock.fn(() => {}) as unknown as typeof harness.runtime.sendMessage;
+    harness.runtime.appendEntry = mock.fn(() => {}) as unknown as typeof harness.runtime.appendEntry;
+
+    const ctx = await harness.command('plan').execute('/other/foo.md');
+
+    strictEqual((ctx.ui.notify as Mock<typeof ctx.ui.notify>).mock.callCount(), 1);
+    ok((ctx.ui.notify as Mock<typeof ctx.ui.notify>).mock.calls[0]!.arguments[0].includes('must be inside project'));
+
+    const before = await harness.emitEvent('before_agent_start', { systemPrompt: 'System' });
+    const prompt = (before.results[0] as { systemPrompt: string }).systemPrompt;
+    ok(prompt.includes('PLANNING MODE ACTIVE'));
+    strictEqual(prompt.includes('/other/foo.md'), false);
+  });
+});
+
+test('/plan <path> rejects directory', async () => {
+  await withTempDir('pi-plan-', async (dir) => {
+    mkdirSync(join(dir, 'plans'));
+    const harness = await createPiTestHarness(planModeExtension, dir);
+    harness.runtime.sendMessage = mock.fn(() => {}) as unknown as typeof harness.runtime.sendMessage;
+    harness.runtime.appendEntry = mock.fn(() => {}) as unknown as typeof harness.runtime.appendEntry;
+
+    const ctx = await harness.command('plan').execute('plans');
+
+    strictEqual((ctx.ui.notify as Mock<typeof ctx.ui.notify>).mock.callCount(), 1);
+    ok((ctx.ui.notify as Mock<typeof ctx.ui.notify>).mock.calls[0]!.arguments[0].includes('is a directory'));
+  });
+});
+
+// ── Natural-language path detection ───────────────────────────
+
+test('input handler: natural language sets plan path before blocked check', async () => {
+  await withTempDir('pi-plan-', async (dir) => {
+    mkdirSync(join(dir, 'plans'), { recursive: true });
+    writeFileSync(join(dir, 'plans', 'PLAN_TMUX-SUBAGENTS.md'), '# Plan');
+    const harness = await createPiTestHarness(planModeExtension, dir);
+    harness.runtime.appendEntry = mock.fn(() => {}) as unknown as typeof harness.runtime.appendEntry;
+
+    const inputResult = await harness.emitEvent('input', { text: 'load and refine plans/PLAN_TMUX-SUBAGENTS.md' });
+    strictEqual((inputResult.results[0] as { action: string }).action, 'continue');
+
+    const before = await harness.emitEvent('before_agent_start', { systemPrompt: 'System' });
+    const prompt = (before.results[0] as { systemPrompt: string }).systemPrompt;
+    ok(prompt.includes('[PLAN RE-ENTRY]'));
+    ok(prompt.includes('PLAN_TMUX-SUBAGENTS.md'));
+  });
+});
+
+test('input handler: natural language path outside cwd is rejected', async () => {
+  await withTempDir('pi-plan-', async (dir) => {
+    const harness = await createPiTestHarness(planModeExtension, dir);
+
+    const inputResult = await harness.emitEvent('input', { text: 'load plan from /other/foo.md' });
+    strictEqual((inputResult.results[0] as { action: string }).action, 'handled');
+    strictEqual((inputResult.ctx.ui.notify as Mock<typeof inputResult.ctx.ui.notify>).mock.callCount(), 1);
+    ok(
+      (inputResult.ctx.ui.notify as Mock<typeof inputResult.ctx.ui.notify>).mock.calls[0]!.arguments[0].includes(
+        'must be inside project',
+      ),
+    );
+  });
+});
+
+test('input handler: quoted natural language path with spaces is handled', async () => {
+  await withTempDir('pi-plan-', async (dir) => {
+    mkdirSync(join(dir, 'plans'), { recursive: true });
+    writeFileSync(join(dir, 'plans', 'my plan.md'), '# Plan');
+    const harness = await createPiTestHarness(planModeExtension, dir);
+    harness.runtime.appendEntry = mock.fn(() => {}) as unknown as typeof harness.runtime.appendEntry;
+
+    const inputResult = await harness.emitEvent('input', { text: 'load plan from "plans/my plan.md"' });
+    strictEqual((inputResult.results[0] as { action: string }).action, 'continue');
+
+    const before = await harness.emitEvent('before_agent_start', { systemPrompt: 'System' });
+    const prompt = (before.results[0] as { systemPrompt: string }).systemPrompt;
+    ok(prompt.includes('my plan.md'));
+  });
+});
+
+// ── Persistence ───────────────────────────────────────────────
+
+test('session_start: restores persisted planPath', async () => {
+  await withTempDir('pi-plan-', async (dir) => {
+    mkdirSync(join(dir, 'plans'), { recursive: true });
+    const planPath = join(dir, 'plans', 'PLAN_TMUX-SUBAGENTS.md');
+    writeFileSync(planPath, '# Plan');
+    const harness = await createPiTestHarness(planModeExtension, dir);
+
+    await harness.emitEvent(
+      'session_start',
+      { reason: 'startup' },
+      {
+        sessionManager: createSessionManagerStub({
+          getEntries: mock.fn(() => [
+            {
+              id: 'entry-1',
+              parentId: null,
+              timestamp: new Date().toISOString(),
+              type: 'custom',
+              customType: 'plan-mode-state',
+              data: { enabled: true, planPath },
+            },
+          ]),
+        }),
+      },
+    );
+
+    const before = await harness.emitEvent('before_agent_start', { systemPrompt: 'System' });
+    const prompt = (before.results[0] as { systemPrompt: string }).systemPrompt;
+    ok(prompt.includes('[PLAN RE-ENTRY]'));
+    ok(prompt.includes(planPath));
+  });
+});
+
+test('persist: custom path stores planPath and omits slug', async () => {
+  await withTempDir('pi-plan-', async (dir) => {
+    mkdirSync(join(dir, 'plans'), { recursive: true });
+    const harness = await createPiTestHarness(planModeExtension, dir);
+    harness.runtime.appendEntry = mock.fn(() => {}) as unknown as typeof harness.runtime.appendEntry;
+
+    await harness.command('plan').execute('plans/PLAN_TMUX-SUBAGENTS.md');
+
+    strictEqual((harness.runtime.appendEntry as Mock<typeof harness.runtime.appendEntry>).mock.callCount(), 1);
+    const entry = (harness.runtime.appendEntry as Mock<typeof harness.runtime.appendEntry>).mock.calls[0]!
+      .arguments[1] as {
+      enabled: boolean;
+      planPath?: string;
+      slug?: string;
+    };
+    strictEqual(entry.enabled, true);
+    ok(entry.planPath?.includes('plans/PLAN_TMUX-SUBAGENTS.md'));
+    strictEqual(entry.slug, undefined);
+  });
+});
+
+test('session_start: reason new resets currentPlanPath', async () => {
+  await withTempDir('pi-plan-', async (dir) => {
+    mkdirSync(join(dir, 'plans'), { recursive: true });
+    const planPath = join(dir, 'plans', 'PLAN_TMUX-SUBAGENTS.md');
+    writeFileSync(planPath, '# Plan');
+    const harness = await createPiTestHarness(planModeExtension, dir);
+
+    await harness.emitEvent(
+      'session_start',
+      { reason: 'startup' },
+      {
+        sessionManager: createSessionManagerStub({
+          getEntries: mock.fn(() => [
+            {
+              id: 'entry-1',
+              parentId: null,
+              timestamp: new Date().toISOString(),
+              type: 'custom',
+              customType: 'plan-mode-state',
+              data: { enabled: true, planPath },
+            },
+          ]),
+        }),
+      },
+    );
+
+    const before1 = await harness.emitEvent('before_agent_start', { systemPrompt: 'System' });
+    ok((before1.results[0] as { systemPrompt: string }).systemPrompt.includes(planPath));
+
+    await harness.emitEvent('session_start', { reason: 'new' });
+    const before2 = await harness.emitEvent('before_agent_start', { systemPrompt: 'System' });
+    const prompt = (before2.results[0] as { systemPrompt: string }).systemPrompt;
+    ok(prompt.includes('PLANNING MODE ACTIVE'));
+    strictEqual(prompt.includes(planPath), false);
+  });
+});
+
+// ── Tool guard with custom plan path ──────────────────────────
+
+test('evaluateToolCall: allows write to custom current plan path', () => {
+  const result = evaluateToolCall(
+    true,
+    'write',
+    undefined,
+    'plans/PLAN_TMUX-SUBAGENTS.md',
+    '/project',
+    '/project/plans/PLAN_TMUX-SUBAGENTS.md',
+  );
+  strictEqual(result, undefined);
+});
+
+test('evaluateToolCall: blocks write to non-selected plan path', () => {
+  const result = evaluateToolCall(
+    true,
+    'write',
+    undefined,
+    'plans/PLAN_OTHER.md',
+    '/project',
+    '/project/plans/PLAN_TMUX-SUBAGENTS.md',
+  );
+  strictEqual(result?.block, true);
+  ok(result!.reason.includes('Planning mode active'));
+});
+
+test('tool_call handler: write to custom plan path is allowed', async () => {
+  await withTempDir('pi-plan-', async (dir) => {
+    mkdirSync(join(dir, 'plans'), { recursive: true });
+    const harness = await createPiTestHarness(planModeExtension, dir);
+    harness.runtime.sendMessage = mock.fn(() => {}) as unknown as typeof harness.runtime.sendMessage;
+    harness.runtime.appendEntry = mock.fn(() => {}) as unknown as typeof harness.runtime.appendEntry;
+    const emitted = captureEvents(harness, 'harness:block');
+
+    await harness.command('plan').execute('plans/PLAN_TMUX-SUBAGENTS.md');
+
+    const { results } = await harness.emitEvent('tool_call', {
+      toolName: 'write',
+      input: { path: 'plans/PLAN_TMUX-SUBAGENTS.md' },
+      toolCallId: 'call-write-plan-1',
+    });
+
+    strictEqual(results[0], undefined);
+    strictEqual(emitted.length, 0);
+  });
+});
+
+test('tool_call handler: write to non-selected plan path is blocked', async () => {
+  await withTempDir('pi-plan-', async (dir) => {
+    mkdirSync(join(dir, 'plans'), { recursive: true });
+    const harness = await createPiTestHarness(planModeExtension, dir);
+    harness.runtime.sendMessage = mock.fn(() => {}) as unknown as typeof harness.runtime.sendMessage;
+    harness.runtime.appendEntry = mock.fn(() => {}) as unknown as typeof harness.runtime.appendEntry;
+    const emitted = captureEvents(harness, 'harness:block');
+
+    await harness.command('plan').execute('plans/PLAN_TMUX-SUBAGENTS.md');
+
+    const { results } = await harness.emitEvent('tool_call', {
+      toolName: 'write',
+      input: { path: 'plans/PLAN_OTHER.md' },
+      toolCallId: 'call-write-other-1',
+    });
+
+    const result = results[0] as { block: true; reason: string } | undefined;
+    strictEqual(result?.block, true);
+    strictEqual(emitted.length, 1);
+    const data = emitted[0] as { toolCallId: string; tool: string; extension: string; reason: string };
+    strictEqual(data.toolCallId, 'call-write-other-1');
+    strictEqual(data.tool, 'write');
+    strictEqual(data.extension, 'plan-mode');
   });
 });

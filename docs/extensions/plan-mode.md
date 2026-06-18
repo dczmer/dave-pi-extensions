@@ -14,13 +14,15 @@ Simple "plan mode" implementation.
 - Visual indicator in the context bar.
 - Can be disabled/toggled with `/plan` or using a hot-key.
 - Can start `pi` with plan mode disabled using `--no-plan` flag.
+- Can start `pi` with a specific plan file using `--plan-file <path>`.
+- Can switch plan files mid-session with `/plan <path>`.
 - Deterministic code with a very small system prompt change, vs. Claude Code which is 90% prompts with _multiple_ HUGE system prompts.
 
 ## Tool Call Filter
 
 This is where I really like `pi` over Claude Code: we can use deterministic code to control things instead of writing complex prompts and hoping the AI doesn't forget our instructions.
 
-The `Edit` and `Write` tool calls are blocked when plan mode is active.
+The `Edit` and `Write` tool calls are blocked when plan mode is active, except for the currently selected plan file.
 
 Any `Bash` calls are parsed using a bash AST parser and inspected to see if the command(s) would cause any modifications.
 
@@ -48,9 +50,21 @@ Or with a slash-command from within `pi`:
 /plan
 ```
 
-## Plan Artifact Auto-Rename
+To switch to a different plan file mid-session:
 
-After the agent writes the initial plan artifact, the extension reads the first line, extracts a topic slug, and automatically renames the file to match.
+```text
+/plan plans/PLAN_TMUX-SUBAGENTS.md
+```
+
+You can also start a session with a specific plan file:
+
+```text
+pi --plan-file plans/PLAN_TMUX-SUBAGENTS.md
+```
+
+`--plan-file` and `--no-plan` are mutually exclusive and cannot be used together.
+
+Custom plan files must be located inside the project directory and must live in directories that already exist. Plan mode will not create parent directories for custom plan paths.
 
 ## System Prompt
 
