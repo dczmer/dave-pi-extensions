@@ -43,6 +43,7 @@
           default = pkgs.mkShell {
             buildInputs = [
               # extra tools for the devShell go here
+              pkgs.pi-coding-agent
             ]
             ++ extraPkgs;
             shellHook = ''
