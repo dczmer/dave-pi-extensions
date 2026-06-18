@@ -137,6 +137,49 @@ export function createExtensionContext(overrides: Partial<ExtensionContext> = {}
   return Object.assign({}, base, overrides, { ui, sessionManager }) as ExtensionContext;
 }
 
+/** ExtensionContext whose editor/select/confirm calls drain queued values. */
+export interface QueuedUIContext extends ExtensionContext {
+  _notifications: Array<{ message: string; level: string }>;
+  queueEditor(value: string | null): void;
+  queueSelect(value: string | null): void;
+  queueConfirm(value: boolean): void;
+}
+
+/**
+ * Build a full ExtensionContext with queue-backed UI inputs.
+ *
+ * Useful for testing code paths that prompt the user via editor, select, or
+ * confirm and emit notifications.
+ */
+export function createQueuedUIContext(overrides: Partial<ExtensionContext> = {}): QueuedUIContext {
+  const base = createExtensionContext(overrides);
+  const editorQueue: (string | null)[] = [];
+  const selectQueue: (string | null)[] = [];
+  const confirmQueue: boolean[] = [];
+  const notifications: Array<{ message: string; level: string }> = [];
+
+  /* eslint-disable @typescript-eslint/no-unused-vars */
+  const ctx = Object.assign(base, {
+    ui: {
+      ...base.ui,
+      editor: async (_title: string, _prefill?: string) => editorQueue.shift() ?? undefined,
+      select: async <T extends string>(_title: string, _options: T[]) =>
+        (selectQueue.shift() ?? undefined) as T | undefined,
+      confirm: async (_title: string, _message: string) => confirmQueue.shift() ?? false,
+      notify: (message: string, level: 'info' | 'warning' | 'error' = 'info') => {
+        notifications.push({ message, level });
+      },
+    },
+    _notifications: notifications,
+    queueEditor: (v: string | null) => editorQueue.push(v),
+    queueSelect: (v: string | null) => selectQueue.push(v),
+    queueConfirm: (v: boolean) => confirmQueue.push(v),
+  });
+  /* eslint-enable @typescript-eslint/no-unused-vars */
+
+  return ctx as QueuedUIContext;
+}
+
 /** Build an ExtensionCommandContext where every method is a `node:test` mock.fn() spy. */
 export function createCommandContext(overrides: Partial<ExtensionCommandContext> = {}): ExtensionCommandContext {
   const base = createExtensionContext(overrides);

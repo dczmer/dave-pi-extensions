@@ -1,20 +1,11 @@
 import { strictEqual, deepStrictEqual, ok } from 'node:assert';
 import { test, type Mock } from 'node:test';
-import { mkdtempSync, rmSync, readFileSync, existsSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { readFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import errorLoggerExtension from '../../../extensions/error-logger/index.ts';
 import { createPiTestHarness } from '../../utils/pi-harness.ts';
 import { createSessionManagerStub } from '../../utils/pi-context.ts';
-
-async function withTempDir<T>(fn: (dir: string) => Promise<T>): Promise<T> {
-  const dir = mkdtempSync(join(tmpdir(), 'pi-errlog-'));
-  try {
-    return await fn(dir);
-  } finally {
-    rmSync(dir, { recursive: true });
-  }
-}
+import { withTempDir } from '../../utils/temp-dir.ts';
 
 test('registers flag, command, and handlers', async () => {
   const harness = await createPiTestHarness(errorLoggerExtension);
@@ -27,7 +18,7 @@ test('registers flag, command, and handlers', async () => {
 });
 
 test('tool_execution_end logs error and stashed args', async () => {
-  await withTempDir(async (dir) => {
+  await withTempDir('pi-errlog-', async (dir) => {
     const logPath = join(dir, 'errors.jsonl');
     const harness = await createPiTestHarness(errorLoggerExtension);
     harness.runtime.flagValues.set('error-log-path', logPath);
@@ -67,7 +58,7 @@ test('tool_execution_end logs error and stashed args', async () => {
 });
 
 test('harness:block logs blocked tool and deduplicates', async () => {
-  await withTempDir(async (dir) => {
+  await withTempDir('pi-errlog-', async (dir) => {
     const logPath = join(dir, 'errors.jsonl');
     const harness = await createPiTestHarness(errorLoggerExtension);
     harness.runtime.flagValues.set('error-log-path', logPath);
@@ -112,7 +103,7 @@ test('harness:block logs blocked tool and deduplicates', async () => {
 });
 
 test('timeout category detected', async () => {
-  await withTempDir(async (dir) => {
+  await withTempDir('pi-errlog-', async (dir) => {
     const logPath = join(dir, 'errors.jsonl');
     const harness = await createPiTestHarness(errorLoggerExtension);
     harness.runtime.flagValues.set('error-log-path', logPath);
@@ -135,7 +126,7 @@ test('timeout category detected', async () => {
 });
 
 test('aborted category detected', async () => {
-  await withTempDir(async (dir) => {
+  await withTempDir('pi-errlog-', async (dir) => {
     const logPath = join(dir, 'errors.jsonl');
     const harness = await createPiTestHarness(errorLoggerExtension);
     harness.runtime.flagValues.set('error-log-path', logPath);
@@ -158,7 +149,7 @@ test('aborted category detected', async () => {
 });
 
 test('non-error tool_execution_end is ignored', async () => {
-  await withTempDir(async (dir) => {
+  await withTempDir('pi-errlog-', async (dir) => {
     const logPath = join(dir, 'errors.jsonl');
     const harness = await createPiTestHarness(errorLoggerExtension);
     harness.runtime.flagValues.set('error-log-path', logPath);
@@ -179,7 +170,7 @@ test('non-error tool_execution_end is ignored', async () => {
 });
 
 test('command shows count and path', async () => {
-  await withTempDir(async (dir) => {
+  await withTempDir('pi-errlog-', async (dir) => {
     const logPath = join(dir, 'errors.jsonl');
     const harness = await createPiTestHarness(errorLoggerExtension);
     harness.runtime.flagValues.set('error-log-path', logPath);
@@ -193,7 +184,7 @@ test('command shows count and path', async () => {
 });
 
 test('session_shutdown unsubscribes event bus', async () => {
-  await withTempDir(async (dir) => {
+  await withTempDir('pi-errlog-', async (dir) => {
     const logPath = join(dir, 'errors.jsonl');
     const harness = await createPiTestHarness(errorLoggerExtension);
     harness.runtime.flagValues.set('error-log-path', logPath);

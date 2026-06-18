@@ -42,6 +42,19 @@ async function loadExtensionFromFactoryInternal(
   return loadExtensionFromFactory(factory, cwd, eventBus, runtime, extensionPath);
 }
 
+/**
+ * Capture all payloads emitted on a harness event bus for a named event.
+ *
+ * @param harness - Test harness whose event bus should be observed.
+ * @param eventName - Event to listen for.
+ * @returns Array that receives each emitted payload.
+ */
+export function captureEvents(harness: PiTestHarness, eventName: string): unknown[] {
+  const events: unknown[] = [];
+  harness.eventBus.on(eventName, (data) => events.push(data));
+  return events;
+}
+
 /** Load an extension through real pi internals and return a test harness. */
 export async function createPiTestHarness(
   factory: ExtensionFactory,

@@ -1,60 +1,16 @@
 import { strictEqual, deepStrictEqual } from 'node:assert';
 import { test } from 'node:test';
-import { mkdtempSync, rmSync, mkdirSync, readFileSync, existsSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { mkdirSync, readFileSync, existsSync } from 'node:fs';
 import { join, dirname } from 'node:path';
-import { type ConfigResult } from '../../../extensions/pi-gate/config.ts';
 import { checkFileAccess } from '../../../extensions/pi-gate/file-access.ts';
 import { approveExternal, resetSessionState } from '../../../extensions/pi-gate/session.ts';
-
-function createMockCtx() {
-  const editorQueue: (string | null)[] = [];
-  const selectQueue: (string | null)[] = [];
-  const notifications: Array<{ message: string; level: string }> = [];
-
-  const ctx = {
-    ui: {
-      editor: () => Promise.resolve(editorQueue.shift() ?? undefined),
-      select: <T extends string>() => Promise.resolve((selectQueue.shift() ?? 'project') as T),
-      notify: (message: string, level: string) => {
-        notifications.push({ message, level });
-      },
-    },
-    _notifications: notifications,
-    queueEditor: (v: string | null) => editorQueue.push(v),
-    queueSelect: (v: string | null) => selectQueue.push(v),
-  };
-
-  return ctx as typeof ctx & Parameters<typeof checkFileAccess>[3];
-}
-
-function withTempDir<T>(fn: (dir: string) => T): T {
-  const dir = mkdtempSync(join(tmpdir(), 'pi-gate-'));
-  try {
-    return fn(dir);
-  } finally {
-    rmSync(dir, { recursive: true });
-  }
-}
-
-function createConfigResult(overrides?: Partial<ConfigResult>): ConfigResult {
-  const empty = () => ({
-    bashAllow: [] as string[],
-    externalAllow: [] as string[],
-  });
-  return {
-    merged: { ...empty(), ...(overrides?.merged || {}) },
-    global: { ...empty(), ...(overrides?.global || {}) },
-    project: { ...empty(), ...(overrides?.project || {}) },
-    globalPath: '/fake/global.json',
-    projectPath: '/fake/project.json',
-    ...overrides,
-  };
-}
+import { withTempDir } from '../../utils/temp-dir.ts';
+import { createQueuedUIContext } from '../../utils/pi-context.ts';
+import { createConfigResult } from './utils/config.ts';
 
 test('project file allowed with empty deny list', async () => {
   const configResult = createConfigResult();
-  const ctx = createMockCtx();
+  const ctx = createQueuedUIContext();
   const result = await checkFileAccess('src/main.ts', '/fake/cwd', configResult, ctx);
   strictEqual(result, true);
 });
@@ -65,7 +21,7 @@ test('external file allowed when in config externalAllow', async () => {
     project: { bashAllow: [], externalAllow: ['/tmp/*'] },
     global: { bashAllow: [], externalAllow: [] },
   });
-  const ctx = createMockCtx();
+  const ctx = createQueuedUIContext();
   const result = await checkFileAccess('/tmp/foo.txt', '/fake/cwd', configResult, ctx);
   strictEqual(result, true);
 });
@@ -74,19 +30,19 @@ test('external file allowed when in session approved list', async () => {
   resetSessionState();
   approveExternal('/tmp/bar.txt');
   const configResult = createConfigResult();
-  const ctx = createMockCtx();
+  const ctx = createQueuedUIContext();
   const result = await checkFileAccess('/tmp/bar.txt', '/fake/cwd', configResult, ctx);
   strictEqual(result, true);
 });
 
 test('external file approved by user and persisted to project config', async () => {
-  withTempDir(async (dir) => {
+  await withTempDir('pi-gate-', async (dir) => {
     const projectPath = join(dir, '.pi', 'extensions', 'pi-gate.json');
     const globalPath = join(dir, 'global.json');
     mkdirSync(dirname(projectPath), { recursive: true });
 
     const configResult = createConfigResult({ projectPath, globalPath });
-    const ctx = createMockCtx();
+    const ctx = createQueuedUIContext();
     ctx.queueEditor('/xyz-custom-path/*');
     ctx.queueSelect('Project');
 
@@ -100,13 +56,13 @@ test('external file approved by user and persisted to project config', async () 
 });
 
 test('external file approved by user and persisted to global config', async () => {
-  withTempDir(async (dir) => {
+  await withTempDir('pi-gate-', async (dir) => {
     const projectPath = join(dir, '.pi', 'extensions', 'pi-gate.json');
     const globalPath = join(dir, 'global.json');
     mkdirSync(dirname(projectPath), { recursive: true });
 
     const configResult = createConfigResult({ projectPath, globalPath });
-    const ctx = createMockCtx();
+    const ctx = createQueuedUIContext();
     ctx.queueEditor('/abc-global-test/*');
     ctx.queueSelect('Global');
 
@@ -121,13 +77,13 @@ test('external file approved by user and persisted to global config', async () =
 });
 
 test('external file approved by user but not persisted', async () => {
-  withTempDir(async (dir) => {
+  await withTempDir('pi-gate-', async (dir) => {
     const projectPath = join(dir, '.pi', 'extensions', 'pi-gate.json');
     const globalPath = join(dir, 'global.json');
     mkdirSync(dirname(projectPath), { recursive: true });
 
     const configResult = createConfigResult({ projectPath, globalPath });
-    const ctx = createMockCtx();
+    const ctx = createQueuedUIContext();
     ctx.queueEditor('/def-skip-test/*');
     ctx.queueSelect('No');
 
@@ -142,7 +98,7 @@ test('external file approved by user but not persisted', async () => {
 
 test('external file denied by user at prompt', async () => {
   const configResult = createConfigResult();
-  const ctx = createMockCtx();
+  const ctx = createQueuedUIContext();
   ctx.queueEditor(null);
 
   const result = await checkFileAccess('/etc/passwd', '/fake/cwd', configResult, ctx);
@@ -158,7 +114,7 @@ test('merged config includes both global and project patterns', async () => {
     global: { bashAllow: [], externalAllow: ['/global/*'] },
     project: { bashAllow: [], externalAllow: ['/project/*'] },
   });
-  const ctx = createMockCtx();
+  const ctx = createQueuedUIContext();
   const result = await checkFileAccess('/global/file.txt', '/fake/cwd', configResult, ctx);
   strictEqual(result, true);
 });

@@ -1,7 +1,6 @@
 import { strictEqual, ok } from 'node:assert';
 import { test, mock, type Mock } from 'node:test';
-import { writeFileSync, mkdtempSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import {
   resolvePlanModeOnSessionStart,
@@ -12,36 +11,10 @@ import {
 import planModeExtension from '../../../extensions/plan-mode/index.ts';
 import { PARSE_FAILURE_REASON } from '../../../extensions/plan-mode/bash-guard.ts';
 import type { ExtensionAPI } from '@mariozechner/pi-coding-agent';
-import { createPiTestHarness, type PiTestHarness } from '../../utils/pi-harness.ts';
+import { createPiTestHarness, captureEvents } from '../../utils/pi-harness.ts';
 import { createUIContext, createSessionManagerStub, createExtensionContext } from '../../utils/pi-context.ts';
-
-function withTempDir<T>(fn: (dir: string) => T): T {
-  const dir = mkdtempSync(join(tmpdir(), 'pi-plan-'));
-  try {
-    return fn(dir);
-  } finally {
-    rmSync(dir, { recursive: true });
-  }
-}
-
-async function withPlanModeHarness<T>(fn: (harness: PiTestHarness) => Promise<T>): Promise<T> {
-  const dir = mkdtempSync(join(tmpdir(), 'pi-plan-'));
-  try {
-    const harness = await createPiTestHarness(planModeExtension, dir);
-    return await fn(harness);
-  } finally {
-    rmSync(dir, { recursive: true, force: true });
-  }
-}
-
-async function withTempDirAsync<T>(fn: (dir: string) => Promise<T>): Promise<T> {
-  const dir = mkdtempSync(join(tmpdir(), 'pi-plan-'));
-  try {
-    return await fn(dir);
-  } finally {
-    rmSync(dir, { recursive: true, force: true });
-  }
-}
+import { withTempDir } from '../../utils/temp-dir.ts';
+import { createMockExtensionAPI, type MockedExtensionAPI } from '../../utils/mock-pi-api.ts';
 
 test('resolvePlanModeOnSessionStart: startup with default flag and no persisted state', () => {
   strictEqual(resolvePlanModeOnSessionStart('startup', false, undefined), true);
@@ -170,7 +143,7 @@ test('augmentSystemPrompt: includes supersede clause', () => {
 });
 
 test('augmentSystemPrompt: injects re-entry prefix when plan file exists', () => {
-  withTempDir((dir) => {
+  withTempDir('pi-plan-', (dir) => {
     const planPath = join(dir, 'plan-20260513-abc123.md');
     writeFileSync(planPath, '# Existing plan');
     const result = augmentSystemPrompt(true, 'System', planPath);
@@ -181,7 +154,7 @@ test('augmentSystemPrompt: injects re-entry prefix when plan file exists', () =>
 });
 
 test('augmentSystemPrompt: omits re-entry prefix when plan file does not exist', () => {
-  withTempDir((dir) => {
+  withTempDir('pi-plan-', (dir) => {
     const planPath = join(dir, 'plan-20260513-abc123.md');
     const result = augmentSystemPrompt(true, 'System', planPath);
     strictEqual(result!.systemPrompt.includes('[PLAN RE-ENTRY]'), false);
@@ -282,7 +255,8 @@ test('evaluateToolCall: allows mkdir outside artifact dir when plan mode is off'
 });
 
 test('tool_call handler: parse failure with user confirm allows', async () => {
-  await withPlanModeHarness(async (harness) => {
+  await withTempDir('pi-plan-', async (dir) => {
+    const harness = await createPiTestHarness(planModeExtension, dir);
     const { results, ctx } = await harness.emitEvent(
       'tool_call',
       { toolName: 'bash', input: { command: "echo 'unclosed" } },
@@ -303,7 +277,8 @@ test('tool_call handler: parse failure with user confirm allows', async () => {
 });
 
 test('tool_call handler: parse failure with user reject blocks', async () => {
-  await withPlanModeHarness(async (harness) => {
+  await withTempDir('pi-plan-', async (dir) => {
+    const harness = await createPiTestHarness(planModeExtension, dir);
     const { results } = await harness.emitEvent(
       'tool_call',
       { toolName: 'bash', input: { command: "echo 'unclosed" } },
@@ -320,7 +295,8 @@ test('tool_call handler: parse failure with user reject blocks', async () => {
 });
 
 test('tool_call handler: destructive command blocks without prompt', async () => {
-  await withPlanModeHarness(async (harness) => {
+  await withTempDir('pi-plan-', async (dir) => {
+    const harness = await createPiTestHarness(planModeExtension, dir);
     const { results, ctx } = await harness.emitEvent(
       'tool_call',
       { toolName: 'bash', input: { command: 'rm file.txt' } },
@@ -338,9 +314,9 @@ test('tool_call handler: destructive command blocks without prompt', async () =>
 });
 
 test('tool_call handler: emits harness:block for edit block', async () => {
-  await withPlanModeHarness(async (harness) => {
-    const emitted: unknown[] = [];
-    harness.eventBus.on('harness:block', (data) => emitted.push(data));
+  await withTempDir('pi-plan-', async (dir) => {
+    const harness = await createPiTestHarness(planModeExtension, dir);
+    const emitted = captureEvents(harness, 'harness:block');
 
     const { results } = await harness.emitEvent('tool_call', {
       toolName: 'edit',
@@ -361,9 +337,9 @@ test('tool_call handler: emits harness:block for edit block', async () => {
 });
 
 test('tool_call handler: emits harness:block for write block', async () => {
-  await withPlanModeHarness(async (harness) => {
-    const emitted: unknown[] = [];
-    harness.eventBus.on('harness:block', (data) => emitted.push(data));
+  await withTempDir('pi-plan-', async (dir) => {
+    const harness = await createPiTestHarness(planModeExtension, dir);
+    const emitted = captureEvents(harness, 'harness:block');
 
     const { results } = await harness.emitEvent('tool_call', {
       toolName: 'write',
@@ -383,9 +359,9 @@ test('tool_call handler: emits harness:block for write block', async () => {
 });
 
 test('tool_call handler: emits harness:block for bash block', async () => {
-  await withPlanModeHarness(async (harness) => {
-    const emitted: unknown[] = [];
-    harness.eventBus.on('harness:block', (data) => emitted.push(data));
+  await withTempDir('pi-plan-', async (dir) => {
+    const harness = await createPiTestHarness(planModeExtension, dir);
+    const emitted = captureEvents(harness, 'harness:block');
 
     const { results } = await harness.emitEvent('tool_call', {
       toolName: 'bash',
@@ -406,9 +382,9 @@ test('tool_call handler: emits harness:block for bash block', async () => {
 });
 
 test('tool_call handler: parse failure rejection emits harness:block', async () => {
-  await withPlanModeHarness(async (harness) => {
-    const emitted: unknown[] = [];
-    harness.eventBus.on('harness:block', (data) => emitted.push(data));
+  await withTempDir('pi-plan-', async (dir) => {
+    const harness = await createPiTestHarness(planModeExtension, dir);
+    const emitted = captureEvents(harness, 'harness:block');
 
     const { results } = await harness.emitEvent(
       'tool_call',
@@ -433,9 +409,9 @@ test('tool_call handler: parse failure rejection emits harness:block', async () 
 });
 
 test('tool_call handler: allowed tool does not emit harness:block', async () => {
-  await withPlanModeHarness(async (harness) => {
-    const emitted: unknown[] = [];
-    harness.eventBus.on('harness:block', (data) => emitted.push(data));
+  await withTempDir('pi-plan-', async (dir) => {
+    const harness = await createPiTestHarness(planModeExtension, dir);
+    const emitted = captureEvents(harness, 'harness:block');
 
     const { results } = await harness.emitEvent('tool_call', {
       toolName: 'read',
@@ -468,7 +444,8 @@ test('isBlockedInput: ignores non-matching text', () => {
 });
 
 test('input handler: blocks implement message in plan mode', async () => {
-  await withPlanModeHarness(async (harness) => {
+  await withTempDir('pi-plan-', async (dir) => {
+    const harness = await createPiTestHarness(planModeExtension, dir);
     const sendMessageSpy = mock.fn(() => {}) as unknown as Mock<typeof harness.runtime.sendMessage>;
     harness.runtime.sendMessage = sendMessageSpy as unknown as typeof harness.runtime.sendMessage;
 
@@ -490,7 +467,8 @@ test('input handler: blocks implement message in plan mode', async () => {
 });
 
 test('input handler: blocks commit message in plan mode', async () => {
-  await withPlanModeHarness(async (harness) => {
+  await withTempDir('pi-plan-', async (dir) => {
+    const harness = await createPiTestHarness(planModeExtension, dir);
     const sendMessageSpy = mock.fn(() => {}) as unknown as Mock<typeof harness.runtime.sendMessage>;
     harness.runtime.sendMessage = sendMessageSpy as unknown as typeof harness.runtime.sendMessage;
 
@@ -503,7 +481,8 @@ test('input handler: blocks commit message in plan mode', async () => {
 });
 
 test('input handler: allows non-blocked text in plan mode', async () => {
-  await withPlanModeHarness(async (harness) => {
+  await withTempDir('pi-plan-', async (dir) => {
+    const harness = await createPiTestHarness(planModeExtension, dir);
     const sendMessageSpy = mock.fn(() => {}) as unknown as Mock<typeof harness.runtime.sendMessage>;
     harness.runtime.sendMessage = sendMessageSpy as unknown as typeof harness.runtime.sendMessage;
     harness.runtime.appendEntry = mock.fn(() => {}) as unknown as typeof harness.runtime.appendEntry;
@@ -517,7 +496,8 @@ test('input handler: allows non-blocked text in plan mode', async () => {
 });
 
 test('input handler: allows blocked text when plan mode is disabled', async () => {
-  await withPlanModeHarness(async (harness) => {
+  await withTempDir('pi-plan-', async (dir) => {
+    const harness = await createPiTestHarness(planModeExtension, dir);
     const sendMessageSpy = mock.fn(() => {}) as unknown as Mock<typeof harness.runtime.sendMessage>;
     harness.runtime.sendMessage = sendMessageSpy as unknown as typeof harness.runtime.sendMessage;
     harness.runtime.appendEntry = mock.fn(() => {}) as unknown as typeof harness.runtime.appendEntry;
@@ -534,7 +514,8 @@ test('input handler: allows blocked text when plan mode is disabled', async () =
 });
 
 test('toggle sends hidden message when enabling plan mode', async () => {
-  await withPlanModeHarness(async (harness) => {
+  await withTempDir('pi-plan-', async (dir) => {
+    const harness = await createPiTestHarness(planModeExtension, dir);
     const sendMessageSpy = mock.fn(() => {}) as unknown as Mock<typeof harness.runtime.sendMessage>;
     harness.runtime.sendMessage = sendMessageSpy as unknown as typeof harness.runtime.sendMessage;
     harness.runtime.appendEntry = mock.fn(() => {}) as unknown as typeof harness.runtime.appendEntry;
@@ -555,7 +536,8 @@ test('toggle sends hidden message when enabling plan mode', async () => {
 });
 
 test('toggle sends hidden message when disabling plan mode', async () => {
-  await withPlanModeHarness(async (harness) => {
+  await withTempDir('pi-plan-', async (dir) => {
+    const harness = await createPiTestHarness(planModeExtension, dir);
     const sendMessageSpy = mock.fn(() => {}) as unknown as Mock<typeof harness.runtime.sendMessage>;
     harness.runtime.sendMessage = sendMessageSpy as unknown as typeof harness.runtime.sendMessage;
     harness.runtime.appendEntry = mock.fn(() => {}) as unknown as typeof harness.runtime.appendEntry;
@@ -574,7 +556,8 @@ test('toggle sends hidden message when disabling plan mode', async () => {
 });
 
 test('input handler: generates plan slug from first user input when plan mode active', async () => {
-  await withPlanModeHarness(async (harness) => {
+  await withTempDir('pi-plan-', async (dir) => {
+    const harness = await createPiTestHarness(planModeExtension, dir);
     harness.runtime.appendEntry = mock.fn(() => {}) as unknown as typeof harness.runtime.appendEntry;
 
     const before1 = await harness.emitEvent('before_agent_start', { systemPrompt: 'System' });
@@ -595,7 +578,8 @@ test('input handler: generates plan slug from first user input when plan mode ac
 });
 
 test('input handler: does not generate slug when plan mode is disabled', async () => {
-  await withPlanModeHarness(async (harness) => {
+  await withTempDir('pi-plan-', async (dir) => {
+    const harness = await createPiTestHarness(planModeExtension, dir);
     harness.runtime.sendMessage = mock.fn(() => {}) as unknown as typeof harness.runtime.sendMessage;
     harness.runtime.appendEntry = mock.fn(() => {}) as unknown as typeof harness.runtime.appendEntry;
 
@@ -612,7 +596,8 @@ test('input handler: does not generate slug when plan mode is disabled', async (
 });
 
 test('session_start: does not generate slug when plan mode enabled and no persisted state', async () => {
-  await withPlanModeHarness(async (harness) => {
+  await withTempDir('pi-plan-', async (dir) => {
+    const harness = await createPiTestHarness(planModeExtension, dir);
     harness.runtime.appendEntry = mock.fn(() => {}) as unknown as typeof harness.runtime.appendEntry;
 
     await harness.emitEvent('session_start', { reason: 'new' });
@@ -626,7 +611,8 @@ test('session_start: does not generate slug when plan mode enabled and no persis
 });
 
 test('session_start: restores persisted slug on resume', async () => {
-  await withPlanModeHarness(async (harness) => {
+  await withTempDir('pi-plan-', async (dir) => {
+    const harness = await createPiTestHarness(planModeExtension, dir);
     harness.runtime.appendEntry = mock.fn(() => {}) as unknown as typeof harness.runtime.appendEntry;
 
     await harness.emitEvent(
@@ -655,42 +641,29 @@ test('session_start: restores persisted slug on resume', async () => {
 });
 
 test('default export registers all handlers even when --no-plan flag is set', () => {
-  const pi = {
-    registerFlag: mock.fn(() => {}),
-    getFlag: mock.fn((name: string) => (name === 'no-plan' ? true : undefined)),
-    registerCommand: mock.fn(() => {}),
-    registerShortcut: mock.fn(() => {}),
-    on: mock.fn(() => {}),
-    sendMessage: mock.fn(() => {}),
-    events: { emit: mock.fn(() => {}) },
-    appendEntry: mock.fn(() => {}),
-  } as unknown as ExtensionAPI;
+  const pi = createMockExtensionAPI({
+    getFlag: (name: string) => (name === 'no-plan' ? true : undefined),
+  });
 
-  planModeExtension(pi);
+  planModeExtension(pi as unknown as ExtensionAPI);
 
-  strictEqual((pi.registerFlag as Mock<typeof pi.registerFlag>).mock.callCount(), 1);
-  strictEqual((pi.registerCommand as Mock<typeof pi.registerCommand>).mock.callCount(), 1);
-  strictEqual((pi.registerShortcut as Mock<typeof pi.registerShortcut>).mock.callCount(), 1);
-  strictEqual((pi.on as Mock<typeof pi.on>).mock.callCount(), 4);
+  strictEqual(pi.registerFlag.mock.callCount(), 1);
+  strictEqual(pi.registerCommand.mock.callCount(), 1);
+  strictEqual(pi.registerShortcut.mock.callCount(), 1);
+  strictEqual(pi.on.mock.callCount(), 4);
 });
 
 test('session_start with --no-plan initializes disabled', async () => {
-  await withTempDirAsync(async (dir) => {
+  await withTempDir('pi-plan-', async (dir) => {
     const handlers = new Map<string, (event: unknown, ctx: unknown) => Promise<unknown>>();
-    const pi = {
-      registerFlag: mock.fn(() => {}),
-      getFlag: mock.fn((name: string) => (name === 'no-plan' ? true : undefined)),
-      registerCommand: mock.fn(() => {}),
-      registerShortcut: mock.fn(() => {}),
-      on: mock.fn((name: string, handler: (event: unknown, ctx: unknown) => Promise<unknown>) => {
-        handlers.set(name, handler);
-      }),
-      sendMessage: mock.fn(() => {}),
-      events: { emit: mock.fn(() => {}) },
-      appendEntry: mock.fn(() => {}),
-    } as unknown as ExtensionAPI;
+    const pi = createMockExtensionAPI({
+      getFlag: (name: string) => (name === 'no-plan' ? true : undefined),
+    });
+    pi.on = ((name: string, handler: (event: unknown, ctx: unknown) => Promise<unknown>) => {
+      handlers.set(name, handler);
+    }) as MockedExtensionAPI['on'];
 
-    planModeExtension(pi);
+    planModeExtension(pi as unknown as ExtensionAPI);
 
     const sessionStartHandler = handlers.get('session_start');
     ok(sessionStartHandler);
@@ -708,22 +681,14 @@ test('session_start with --no-plan initializes disabled', async () => {
 });
 
 test('session_start without --no-plan initializes enabled', async () => {
-  await withTempDirAsync(async (dir) => {
+  await withTempDir('pi-plan-', async (dir) => {
     const handlers = new Map<string, (event: unknown, ctx: unknown) => Promise<unknown>>();
-    const pi = {
-      registerFlag: mock.fn(() => {}),
-      getFlag: mock.fn(() => false),
-      registerCommand: mock.fn(() => {}),
-      registerShortcut: mock.fn(() => {}),
-      on: mock.fn((name: string, handler: (event: unknown, ctx: unknown) => Promise<unknown>) => {
-        handlers.set(name, handler);
-      }),
-      sendMessage: mock.fn(() => {}),
-      events: { emit: mock.fn(() => {}) },
-      appendEntry: mock.fn(() => {}),
-    } as unknown as ExtensionAPI;
+    const pi = createMockExtensionAPI({ getFlag: () => false });
+    pi.on = ((name: string, handler: (event: unknown, ctx: unknown) => Promise<unknown>) => {
+      handlers.set(name, handler);
+    }) as MockedExtensionAPI['on'];
 
-    planModeExtension(pi);
+    planModeExtension(pi as unknown as ExtensionAPI);
 
     const sessionStartHandler = handlers.get('session_start');
     ok(sessionStartHandler);

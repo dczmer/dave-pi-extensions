@@ -1,59 +1,12 @@
 import { strictEqual, deepStrictEqual } from 'node:assert';
 import { test } from 'node:test';
-import { mkdtempSync, rmSync, mkdirSync, readFileSync, existsSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { mkdirSync, readFileSync, existsSync } from 'node:fs';
 import { join, dirname } from 'node:path';
-import { type ConfigResult } from '../../../extensions/pi-gate/config.ts';
 import { checkBashCommand, parseCommandStatements } from '../../../extensions/pi-gate/bash-guard.ts';
 import { resetSessionState, approveBashPattern } from '../../../extensions/pi-gate/session.ts';
-
-function createMockCtx() {
-  const editorQueue: (string | null)[] = [];
-  const selectQueue: (string | null)[] = [];
-  const confirmQueue: boolean[] = [];
-  const notifications: Array<{ message: string; level: string }> = [];
-
-  const ctx = {
-    ui: {
-      editor: () => Promise.resolve(editorQueue.shift() ?? undefined),
-      select: <T extends string>() => Promise.resolve((selectQueue.shift() ?? 'project') as T),
-      notify: (message: string, level: string) => {
-        notifications.push({ message, level });
-      },
-      confirm: () => Promise.resolve(confirmQueue.shift() ?? false),
-    },
-    _notifications: notifications,
-    queueEditor: (v: string | null) => editorQueue.push(v),
-    queueSelect: (v: string | null) => selectQueue.push(v),
-    queueConfirm: (v: boolean) => confirmQueue.push(v),
-  };
-
-  return ctx as typeof ctx & Parameters<typeof checkBashCommand>[3];
-}
-
-function withTempDir<T>(fn: (dir: string) => T): T {
-  const dir = mkdtempSync(join(tmpdir(), 'pi-gate-'));
-  try {
-    return fn(dir);
-  } finally {
-    rmSync(dir, { recursive: true });
-  }
-}
-
-function createConfigResult(overrides?: Partial<ConfigResult>): ConfigResult {
-  const empty = () => ({
-    bashAllow: [] as string[],
-    externalAllow: [] as string[],
-  });
-  return {
-    merged: { ...empty(), ...(overrides?.merged || {}) },
-    global: { ...empty(), ...(overrides?.global || {}) },
-    project: { ...empty(), ...(overrides?.project || {}) },
-    globalPath: '/fake/global.json',
-    projectPath: '/fake/project.json',
-    ...overrides,
-  };
-}
+import { withTempDir } from '../../utils/temp-dir.ts';
+import { createQueuedUIContext } from '../../utils/pi-context.ts';
+import { createConfigResult } from './utils/config.ts';
 
 test('command allowed by config bashAllow pattern', async () => {
   const configResult = createConfigResult({
@@ -61,7 +14,7 @@ test('command allowed by config bashAllow pattern', async () => {
     project: { bashAllow: ['ls *'], externalAllow: [] },
     global: { bashAllow: [], externalAllow: [] },
   });
-  const ctx = createMockCtx();
+  const ctx = createQueuedUIContext();
   const result = await checkBashCommand('ls -la', '/fake/cwd', configResult, ctx);
   strictEqual(result, true);
 });
@@ -74,7 +27,7 @@ test('command allowed by session approved pattern', async () => {
     project: { bashAllow: [], externalAllow: [] },
     global: { bashAllow: [], externalAllow: [] },
   });
-  const ctx = createMockCtx();
+  const ctx = createQueuedUIContext();
   const result = await checkBashCommand('cat file.txt', '/fake/cwd', configResult, ctx);
   strictEqual(result, true);
 });
@@ -85,7 +38,7 @@ test('command with project files all allowed', async () => {
     project: { bashAllow: ['cat *'], externalAllow: [] },
     global: { bashAllow: [], externalAllow: [] },
   });
-  const ctx = createMockCtx();
+  const ctx = createQueuedUIContext();
   const result = await checkBashCommand('cat main.ts', '/fake/cwd', configResult, ctx);
   strictEqual(result, true);
 });
@@ -96,19 +49,19 @@ test('command with external files all allowed', async () => {
     project: { bashAllow: ['cat *'], externalAllow: ['/tmp/*'] },
     global: { bashAllow: [], externalAllow: [] },
   });
-  const ctx = createMockCtx();
+  const ctx = createQueuedUIContext();
   const result = await checkBashCommand('cat /tmp/foo.txt', '/fake/cwd', configResult, ctx);
   strictEqual(result, true);
 });
 
 test('no match prompts user, allows, persists to project, recurses, succeeds', async () => {
-  withTempDir(async (dir) => {
+  await withTempDir('pi-gate-', async (dir) => {
     const projectPath = join(dir, '.pi', 'extensions', 'pi-gate.json');
     const globalPath = join(dir, 'global.json');
     mkdirSync(dirname(projectPath), { recursive: true });
 
     const configResult = createConfigResult({ projectPath, globalPath });
-    const ctx = createMockCtx();
+    const ctx = createQueuedUIContext();
     ctx.queueEditor('xyz-custom-cmd *');
     ctx.queueSelect('Project');
 
@@ -122,13 +75,13 @@ test('no match prompts user, allows, persists to project, recurses, succeeds', a
 });
 
 test('no match prompts user, allows, persists to global, recurses, succeeds', async () => {
-  withTempDir(async (dir) => {
+  await withTempDir('pi-gate-', async (dir) => {
     const projectPath = join(dir, '.pi', 'extensions', 'pi-gate.json');
     const globalPath = join(dir, 'global.json');
     mkdirSync(dirname(projectPath), { recursive: true });
 
     const configResult = createConfigResult({ projectPath, globalPath });
-    const ctx = createMockCtx();
+    const ctx = createQueuedUIContext();
     ctx.queueEditor('abc-global-test-cmd *');
     ctx.queueSelect('Global');
 
@@ -143,13 +96,13 @@ test('no match prompts user, allows, persists to global, recurses, succeeds', as
 });
 
 test('no match prompts user, allows, skips persist, recurses, succeeds', async () => {
-  withTempDir(async (dir) => {
+  await withTempDir('pi-gate-', async (dir) => {
     const projectPath = join(dir, '.pi', 'extensions', 'pi-gate.json');
     const globalPath = join(dir, 'global.json');
     mkdirSync(dirname(projectPath), { recursive: true });
 
     const configResult = createConfigResult({ projectPath, globalPath });
-    const ctx = createMockCtx();
+    const ctx = createQueuedUIContext();
     ctx.queueEditor('def-skip-test-cmd *');
     ctx.queueSelect('No');
 
@@ -165,7 +118,7 @@ test('no match prompts user, allows, skips persist, recurses, succeeds', async (
 
 test('user denies command at prompt', async () => {
   const configResult = createConfigResult();
-  const ctx = createMockCtx();
+  const ctx = createQueuedUIContext();
   ctx.queueEditor(null);
 
   const result = await checkBashCommand('rm -rf /', '/fake/cwd', configResult, ctx);
@@ -174,7 +127,7 @@ test('user denies command at prompt', async () => {
 
 test('user allows command but clears pattern', async () => {
   const configResult = createConfigResult();
-  const ctx = createMockCtx();
+  const ctx = createQueuedUIContext();
   ctx.queueEditor('');
 
   const result = await checkBashCommand('rm -rf /', '/fake/cwd', configResult, ctx);
@@ -187,14 +140,14 @@ test('command with no file arguments', async () => {
     project: { bashAllow: ['ls *'], externalAllow: [] },
     global: { bashAllow: [], externalAllow: [] },
   });
-  const ctx = createMockCtx();
+  const ctx = createQueuedUIContext();
   const result = await checkBashCommand('ls -la', '/fake/cwd', configResult, ctx);
   strictEqual(result, true);
 });
 
 test("recursion doesn't cause infinite loop", async () => {
   const configResult = createConfigResult();
-  const ctx = createMockCtx();
+  const ctx = createQueuedUIContext();
   ctx.queueEditor('custom-cmd *');
   ctx.queueSelect('No');
 
@@ -306,7 +259,7 @@ test('compound command: all statements allowed', async () => {
     project: { bashAllow: ['cd *', 'ls *'], externalAllow: [] },
     global: { bashAllow: [], externalAllow: [] },
   });
-  const ctx = createMockCtx();
+  const ctx = createQueuedUIContext();
   const result = await checkBashCommand('cd subdir && ls -la', '/fake/cwd', configResult, ctx);
   strictEqual(result, true);
 });
@@ -317,7 +270,7 @@ test('compound command: one statement denied', async () => {
     project: { bashAllow: ['cd *'], externalAllow: [] },
     global: { bashAllow: [], externalAllow: [] },
   });
-  const ctx = createMockCtx();
+  const ctx = createQueuedUIContext();
 
   const result = await checkBashCommand('cd /home && rm -rf /', '/fake/cwd', configResult, ctx);
   strictEqual(result, false);
@@ -325,7 +278,7 @@ test('compound command: one statement denied', async () => {
 
 test('unparsable command: user confirms allows', async () => {
   const configResult = createConfigResult();
-  const ctx = createMockCtx();
+  const ctx = createQueuedUIContext();
   ctx.queueConfirm(true);
 
   const result = await checkBashCommand('echo $(echo $(whoami))', '/fake/cwd', configResult, ctx);
@@ -337,7 +290,7 @@ test('unparsable command: user confirms allows', async () => {
 
 test('unparsable command: user rejects blocks', async () => {
   const configResult = createConfigResult();
-  const ctx = createMockCtx();
+  const ctx = createQueuedUIContext();
   ctx.queueConfirm(false);
 
   const result = await checkBashCommand("echo 'unclosed", '/fake/cwd', configResult, ctx);

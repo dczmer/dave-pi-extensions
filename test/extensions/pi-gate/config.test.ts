@@ -1,21 +1,13 @@
 import { strictEqual, deepStrictEqual, throws } from 'node:assert';
 import { test } from 'node:test';
-import { mkdtempSync, rmSync, writeFileSync, mkdirSync, statSync, readdirSync } from 'node:fs';
-import { tmpdir, homedir } from 'node:os';
+import { writeFileSync, mkdirSync, statSync, readdirSync } from 'node:fs';
+import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { type PiGateConfig, loadConfig, saveConfig } from '../../../extensions/pi-gate/config.ts';
-
-function withTempDir<T>(fn: (dir: string) => T): T {
-  const dir = mkdtempSync(join(tmpdir(), 'pi-gate-'));
-  try {
-    return fn(dir);
-  } finally {
-    rmSync(dir, { recursive: true });
-  }
-}
+import { withTempDir } from '../../utils/temp-dir.ts';
 
 test('loadConfig returns merged config from project file', () => {
-  withTempDir((dir) => {
+  withTempDir('pi-gate-', (dir) => {
     const projectConfigDir = join(dir, '.pi', 'extensions');
     mkdirSync(projectConfigDir, { recursive: true });
     writeFileSync(
@@ -37,7 +29,7 @@ test('loadConfig returns merged config from project file', () => {
 });
 
 test('loadConfig merges global and project configs', () => {
-  withTempDir((dir) => {
+  withTempDir('pi-gate-', (dir) => {
     const projectConfigDir = join(dir, '.pi', 'extensions');
     mkdirSync(projectConfigDir, { recursive: true });
     writeFileSync(
@@ -59,7 +51,7 @@ test('loadConfig merges global and project configs', () => {
 });
 
 test('loadConfig returns empty project config when project file missing', () => {
-  withTempDir((dir) => {
+  withTempDir('pi-gate-', (dir) => {
     const result = loadConfig(dir);
     // Project should be empty when no project file exists
     deepStrictEqual(result.project.bashAllow, []);
@@ -68,7 +60,7 @@ test('loadConfig returns empty project config when project file missing', () => 
 });
 
 test('loadConfig handles empty project file', () => {
-  withTempDir((dir) => {
+  withTempDir('pi-gate-', (dir) => {
     const projectConfigDir = join(dir, '.pi', 'extensions');
     mkdirSync(projectConfigDir, { recursive: true });
     writeFileSync(join(projectConfigDir, 'pi-gate.json'), '');
@@ -81,7 +73,7 @@ test('loadConfig handles empty project file', () => {
 });
 
 test('saveConfig and reload roundtrip preserves data', () => {
-  withTempDir((dir) => {
+  withTempDir('pi-gate-', (dir) => {
     const projectConfigDir = join(dir, '.pi', 'extensions');
     mkdirSync(projectConfigDir, { recursive: true });
     const configPath = join(projectConfigDir, 'pi-gate.json');
@@ -98,7 +90,7 @@ test('saveConfig and reload roundtrip preserves data', () => {
 });
 
 test('append to project bashAllow and save', () => {
-  withTempDir((dir) => {
+  withTempDir('pi-gate-', (dir) => {
     const projectConfigDir = join(dir, '.pi', 'extensions');
     mkdirSync(projectConfigDir, { recursive: true });
 
@@ -112,7 +104,7 @@ test('append to project bashAllow and save', () => {
 });
 
 test('append to project externalAllow and save', () => {
-  withTempDir((dir) => {
+  withTempDir('pi-gate-', (dir) => {
     const projectConfigDir = join(dir, '.pi', 'extensions');
     mkdirSync(projectConfigDir, { recursive: true });
 
@@ -126,7 +118,7 @@ test('append to project externalAllow and save', () => {
 });
 
 test('malformed JSON in project file throws error with clear message', () => {
-  withTempDir((dir) => {
+  withTempDir('pi-gate-', (dir) => {
     const projectConfigDir = join(dir, '.pi', 'extensions');
     mkdirSync(projectConfigDir, { recursive: true });
     const configPath = join(projectConfigDir, 'pi-gate.json');
@@ -141,7 +133,7 @@ test('malformed JSON in project file throws error with clear message', () => {
 });
 
 test('save creates parent directories if needed', () => {
-  withTempDir((dir) => {
+  withTempDir('pi-gate-', (dir) => {
     const nested = join(dir, 'a', 'b', 'c');
     const configPath = join(nested, 'pi-gate.json');
     const config: PiGateConfig = { bashAllow: [], externalAllow: [] };
@@ -152,7 +144,7 @@ test('save creates parent directories if needed', () => {
 });
 
 test('atomic save operation (temp file + rename)', () => {
-  withTempDir((dir) => {
+  withTempDir('pi-gate-', (dir) => {
     const configPath = join(dir, 'pi-gate.json');
     const config: PiGateConfig = {
       bashAllow: ['ls'],
@@ -165,7 +157,7 @@ test('atomic save operation (temp file + rename)', () => {
 });
 
 test('ConfigResult paths are correct', () => {
-  withTempDir((dir) => {
+  withTempDir('pi-gate-', (dir) => {
     const result = loadConfig(dir);
     strictEqual(result.projectPath, join(dir, '.pi', 'extensions', 'pi-gate.json'));
     strictEqual(result.globalPath, join(homedir(), '.pi', 'agent', 'extensions', 'pi-gate.json'));

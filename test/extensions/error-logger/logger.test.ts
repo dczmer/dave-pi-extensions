@@ -1,7 +1,6 @@
 import { strictEqual, ok, deepStrictEqual } from 'node:assert';
 import { test } from 'node:test';
-import { mkdtempSync, rmSync, existsSync, appendFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { existsSync, appendFileSync } from 'node:fs';
 import { join } from 'node:path';
 import {
   getDefaultLogPath,
@@ -17,15 +16,7 @@ import {
   OUTPUT_PREVIEW_LINES,
   OUTPUT_PREVIEW_CAP,
 } from '../../../extensions/error-logger/logger.ts';
-
-function withTempDir<T>(fn: (dir: string) => T): T {
-  const dir = mkdtempSync(join(tmpdir(), 'pi-errlog-'));
-  try {
-    return fn(dir);
-  } finally {
-    rmSync(dir, { recursive: true });
-  }
-}
+import { withTempDir } from '../../utils/temp-dir.ts';
 
 test('getDefaultLogPath returns path in home', () => {
   const path = getDefaultLogPath();
@@ -162,7 +153,7 @@ test('extractBashInfo caps preview by OUTPUT_PREVIEW_CAP', () => {
 });
 
 test('writeEntry creates directories and appends', () => {
-  withTempDir((dir) => {
+  withTempDir('pi-errlog-', (dir) => {
     const logPath = join(dir, 'nested', 'errors.jsonl');
     strictEqual(existsSync(logPath), false);
 
@@ -178,7 +169,7 @@ test('writeEntry creates directories and appends', () => {
 });
 
 test('writeEntry appends multiple lines', () => {
-  withTempDir((dir) => {
+  withTempDir('pi-errlog-', (dir) => {
     const logPath = join(dir, 'errors.jsonl');
     writeEntry(logPath, buildEntry('2024-01-01T00:00:00Z', undefined, 'bash', 'c1', {}, 'execution', 'execution'));
     writeEntry(logPath, buildEntry('2024-01-01T00:00:01Z', undefined, 'read', 'c2', {}, 'blocked', 'pi-gate'));
@@ -191,7 +182,7 @@ test('writeEntry appends multiple lines', () => {
 });
 
 test('readEntries skips malformed lines', () => {
-  withTempDir((dir) => {
+  withTempDir('pi-errlog-', (dir) => {
     const logPath = join(dir, 'errors.jsonl');
     writeEntry(logPath, buildEntry('2024-01-01T00:00:00Z', undefined, 'bash', 'c1', {}, 'execution', 'execution'));
     // inject malformed line manually
@@ -204,13 +195,13 @@ test('readEntries skips malformed lines', () => {
 });
 
 test('countEntries returns zero for missing file', () => {
-  withTempDir((dir) => {
+  withTempDir('pi-errlog-', (dir) => {
     strictEqual(countEntries(join(dir, 'missing.jsonl')), 0);
   });
 });
 
 test('countEntries matches readEntries length', () => {
-  withTempDir((dir) => {
+  withTempDir('pi-errlog-', (dir) => {
     const logPath = join(dir, 'errors.jsonl');
     writeEntry(logPath, buildEntry('2024-01-01T00:00:00Z', undefined, 'bash', 'c1', {}, 'execution', 'execution'));
     strictEqual(countEntries(logPath), 1);

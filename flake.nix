@@ -43,6 +43,8 @@
           default = pkgs.mkShell {
             buildInputs = [
               # extra tools for the devShell go here
+              pkgs.perl
+              pkgs.python3
               pkgs.pi-coding-agent
             ]
             ++ extraPkgs;

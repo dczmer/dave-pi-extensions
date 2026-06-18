@@ -1,29 +1,18 @@
 import { strictEqual, ok } from 'node:assert';
-import { test } from 'node:test';
-import { mkdtempSync, rmSync, mkdirSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { test, mock } from 'node:test';
+import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import piGateExtension from '../../../extensions/pi-gate/index.ts';
-import { createPiTestHarness } from '../../utils/pi-harness.ts';
+import { createPiTestHarness, captureEvents } from '../../utils/pi-harness.ts';
 import { createUIContext } from '../../utils/pi-context.ts';
-import { mock } from 'node:test';
-
-async function withTempDir<T>(fn: (dir: string) => Promise<T>): Promise<T> {
-  const dir = mkdtempSync(join(tmpdir(), 'pi-gate-'));
-  try {
-    return await fn(dir);
-  } finally {
-    rmSync(dir, { recursive: true });
-  }
-}
+import { withTempDir } from '../../utils/temp-dir.ts';
 
 test('blocks disallowed bash command and emits harness:block', async () => {
-  await withTempDir(async (dir) => {
+  await withTempDir('pi-gate-', async (dir) => {
     mkdirSync(join(dir, '.pi', 'extensions'), { recursive: true });
     const harness = await createPiTestHarness(piGateExtension, dir);
 
-    const emitted: unknown[] = [];
-    harness.eventBus.on('harness:block', (data) => emitted.push(data));
+    const emitted = captureEvents(harness, 'harness:block');
 
     const { results } = await harness.emitEvent(
       'tool_call',
@@ -49,12 +38,11 @@ test('blocks disallowed bash command and emits harness:block', async () => {
 });
 
 test('blocks disallowed file access and emits harness:block', async () => {
-  await withTempDir(async (dir) => {
+  await withTempDir('pi-gate-', async (dir) => {
     mkdirSync(join(dir, '.pi', 'extensions'), { recursive: true });
     const harness = await createPiTestHarness(piGateExtension, dir);
 
-    const emitted: unknown[] = [];
-    harness.eventBus.on('harness:block', (data) => emitted.push(data));
+    const emitted = captureEvents(harness, 'harness:block');
 
     const { results } = await harness.emitEvent(
       'tool_call',
@@ -78,12 +66,11 @@ test('blocks disallowed file access and emits harness:block', async () => {
 });
 
 test('allowed command does not emit harness:block', async () => {
-  await withTempDir(async (dir) => {
+  await withTempDir('pi-gate-', async (dir) => {
     mkdirSync(join(dir, '.pi', 'extensions'), { recursive: true });
     const harness = await createPiTestHarness(piGateExtension, dir);
 
-    const emitted: unknown[] = [];
-    harness.eventBus.on('harness:block', (data) => emitted.push(data));
+    const emitted = captureEvents(harness, 'harness:block');
 
     const { results } = await harness.emitEvent(
       'tool_call',
