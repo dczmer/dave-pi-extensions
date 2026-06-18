@@ -60,10 +60,6 @@ I do also run `pi` in a [Bubblewrap](https://github.com/containers/bubblewrap) s
 
 [Read more here](./docs/extensions/pi-gate.md).
 
-### rtk-bash-wrapper
-
-> NOTE: I'm going to replace this with [pi-rtk](https://github.com/mcowger/pi-rtk).
-
 ### tmux-agents
 
 TODO
