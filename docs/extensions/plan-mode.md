@@ -30,6 +30,14 @@ When a tool call is blocked, we return a message to the AI, reminding it that it
 
 ![plan-mode-blocked](../images/plan-mode-blocked.png)
 
+## Path Validation Limitations
+
+Plan-mode path checks resolve paths textually with `node:path.resolve` and
+`normalize`. They do **not** follow symlinks and do **not** account for
+case-insensitive filesystems. A symlink pointing outside the project directory
+or a case-mismatched path may pass validation even though it refers to files
+outside the intended scope.
+
 ## Visual Indicator
 
 When plan mode is active, the context bar will show a visual indicator. When plan mode is deactivated, it will disappear.
@@ -65,6 +73,12 @@ pi --plan-file plans/PLAN_TMUX-SUBAGENTS.md
 `--plan-file` and `--no-plan` are mutually exclusive and cannot be used together.
 
 Custom plan files must be located inside the project directory and must live in directories that already exist. Plan mode will not create parent directories for custom plan paths.
+
+## Generated Plan Files
+
+When plan mode is active and no plan file has been selected, the extension
+auto-creates a dated plan file under `.pi/artifacts/` inside the project
+directory. These files are local working artifacts and should not be committed.
 
 ## System Prompt
 

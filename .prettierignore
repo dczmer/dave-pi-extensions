@@ -6,3 +6,4 @@ coverage
 *.log
 package-lock.json
 flake.lock
+.superpowers

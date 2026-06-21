@@ -1,2 +1,6 @@
 .direnv/
 node_modules
+
+# Auto-generated plan-mode artifacts
+.pi/artifacts/
+.superpowers

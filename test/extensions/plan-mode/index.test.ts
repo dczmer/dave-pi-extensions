@@ -736,8 +736,28 @@ test('extractPlanPathFromInput returns undefined for unrelated text', () => {
   strictEqual(extractPlanPathFromInput('what is the plan?'), undefined);
 });
 
-test('extractPlanPathFromInput preserves quoted path', () => {
-  strictEqual(extractPlanPathFromInput('load plan from "plans/my plan.md"'), '"plans/my plan.md"');
+test('extractPlanPathFromInput strips quotes from quoted path', () => {
+  strictEqual(extractPlanPathFromInput('load plan from "plans/my plan.md"'), 'plans/my plan.md');
+});
+
+test('extractPlanPathFromInput does not strip conjunction inside quoted path', () => {
+  strictEqual(extractPlanPathFromInput('load plan from "plans/foo and bar.md"'), 'plans/foo and bar.md');
+});
+
+test('extractPlanPathFromInput returns undefined for prose without path', () => {
+  strictEqual(extractPlanPathFromInput('load and refine the plan'), undefined);
+});
+
+test('extractPlanPathFromInput preserves quoted path containing conjunction', () => {
+  strictEqual(extractPlanPathFromInput('load plan from "plans/foo and bar.md"'), 'plans/foo and bar.md');
+});
+
+test('extractPlanPathFromInput ignores trailing prose after conjunction', () => {
+  strictEqual(extractPlanPathFromInput('load plan from plans/foo.md and implement it'), 'plans/foo.md');
+});
+
+test('extractPlanPathFromInput accepts relative filename with extension', () => {
+  strictEqual(extractPlanPathFromInput('use plan at plan.md'), 'plan.md');
 });
 
 // ── CLI flag --plan-file ──────────────────────────────────────
@@ -806,6 +826,33 @@ test('session_start: --plan-file non-existing file injects normal planning promp
   });
 });
 
+test('session_start: --plan-file with missing parent directory warns', async () => {
+  await withTempDir('pi-plan-', async (dir) => {
+    const handlers = new Map<string, (event: unknown, ctx: unknown) => Promise<unknown>>();
+    const pi = createMockExtensionAPI({
+      getFlag: (name: string) => (name === 'plan-file' ? 'missing/foo.md' : undefined),
+    });
+    pi.on = ((name: string, handler: (event: unknown, ctx: unknown) => Promise<unknown>) => {
+      handlers.set(name, handler);
+    }) as MockedExtensionAPI['on'];
+
+    planModeExtension(pi as unknown as ExtensionAPI);
+
+    const sessionStartHandler = handlers.get('session_start');
+    ok(sessionStartHandler);
+
+    const ctx = createExtensionContext({ cwd: dir });
+    await sessionStartHandler!({ reason: 'startup' }, ctx);
+
+    strictEqual((ctx.ui.notify as Mock<typeof ctx.ui.notify>).mock.callCount(), 1);
+    ok(
+      (ctx.ui.notify as Mock<typeof ctx.ui.notify>).mock.calls[0]!.arguments[0].includes(
+        'parent directory does not exist',
+      ),
+    );
+  });
+});
+
 test('session_start: --plan-file with --no-plan raises error', async () => {
   await withTempDir('pi-plan-', async (dir) => {
     const handlers = new Map<string, (event: unknown, ctx: unknown) => Promise<unknown>>();
@@ -856,6 +903,36 @@ test('session_start: reason new ignores --plan-file', async () => {
 
     ok(result.systemPrompt.includes('PLANNING MODE ACTIVE'));
     strictEqual(result.systemPrompt.includes('PLAN_TMUX-SUBAGENTS.md'), false);
+  });
+});
+
+test('session_start: --plan-file outside cwd warns', async () => {
+  await withTempDir('pi-plan-', async (dir) => {
+    const handlers = new Map<string, (event: unknown, ctx: unknown) => Promise<unknown>>();
+    const pi = createMockExtensionAPI({
+      getFlag: (name: string) => (name === 'plan-file' ? '/other/foo.md' : undefined),
+    });
+    pi.on = ((name: string, handler: (event: unknown, ctx: unknown) => Promise<unknown>) => {
+      handlers.set(name, handler);
+    }) as MockedExtensionAPI['on'];
+
+    planModeExtension(pi as unknown as ExtensionAPI);
+
+    const sessionStartHandler = handlers.get('session_start');
+    ok(sessionStartHandler);
+    const beforeAgentStartHandler = handlers.get('before_agent_start');
+    ok(beforeAgentStartHandler);
+
+    const ctx = createExtensionContext({ cwd: dir });
+    await sessionStartHandler!({ reason: 'startup' }, ctx);
+    const result = (await beforeAgentStartHandler!({ systemPrompt: 'System' }, ctx)) as {
+      systemPrompt: string;
+    };
+
+    strictEqual((ctx.ui.notify as Mock<typeof ctx.ui.notify>).mock.callCount(), 1);
+    ok((ctx.ui.notify as Mock<typeof ctx.ui.notify>).mock.calls[0]!.arguments[0].includes('must be inside project'));
+    ok(result.systemPrompt.includes('PLANNING MODE ACTIVE'));
+    strictEqual(result.systemPrompt.includes('/other/foo.md'), false);
   });
 });
 
@@ -924,6 +1001,23 @@ test('/plan <path> rejects directory', async () => {
 
     strictEqual((ctx.ui.notify as Mock<typeof ctx.ui.notify>).mock.callCount(), 1);
     ok((ctx.ui.notify as Mock<typeof ctx.ui.notify>).mock.calls[0]!.arguments[0].includes('is a directory'));
+  });
+});
+
+test('/plan <path> rejects missing parent directory', async () => {
+  await withTempDir('pi-plan-', async (dir) => {
+    const harness = await createPiTestHarness(planModeExtension, dir);
+    harness.runtime.sendMessage = mock.fn(() => {}) as unknown as typeof harness.runtime.sendMessage;
+    harness.runtime.appendEntry = mock.fn(() => {}) as unknown as typeof harness.runtime.appendEntry;
+
+    const ctx = await harness.command('plan').execute('missing/foo.md');
+
+    strictEqual((ctx.ui.notify as Mock<typeof ctx.ui.notify>).mock.callCount(), 1);
+    ok(
+      (ctx.ui.notify as Mock<typeof ctx.ui.notify>).mock.calls[0]!.arguments[0].includes(
+        'parent directory does not exist',
+      ),
+    );
   });
 });
 
@@ -1018,7 +1112,15 @@ test('persist: custom path stores planPath and omits slug', async () => {
     const harness = await createPiTestHarness(planModeExtension, dir);
     harness.runtime.appendEntry = mock.fn(() => {}) as unknown as typeof harness.runtime.appendEntry;
 
-    await harness.command('plan').execute('plans/PLAN_TMUX-SUBAGENTS.md');
+    const ctx = await harness.command('plan').execute('plans/PLAN_TMUX-SUBAGENTS.md');
+
+    strictEqual((ctx.ui.notify as Mock<typeof ctx.ui.notify>).mock.callCount(), 1);
+    ok((ctx.ui.notify as Mock<typeof ctx.ui.notify>).mock.calls[0]!.arguments[0].includes('Plan file set to'));
+    ok(
+      (ctx.ui.notify as Mock<typeof ctx.ui.notify>).mock.calls[0]!.arguments[0].includes(
+        'plans/PLAN_TMUX-SUBAGENTS.md',
+      ),
+    );
 
     strictEqual((harness.runtime.appendEntry as Mock<typeof harness.runtime.appendEntry>).mock.callCount(), 1);
     const entry = (harness.runtime.appendEntry as Mock<typeof harness.runtime.appendEntry>).mock.calls[0]!
@@ -1030,6 +1132,28 @@ test('persist: custom path stores planPath and omits slug', async () => {
     strictEqual(entry.enabled, true);
     ok(entry.planPath?.includes('plans/PLAN_TMUX-SUBAGENTS.md'));
     strictEqual(entry.slug, undefined);
+  });
+});
+
+test('persist: artifact path stores both planPath and slug', async () => {
+  await withTempDir('pi-plan-', async (dir) => {
+    const harness = await createPiTestHarness(planModeExtension, dir);
+    harness.runtime.appendEntry = mock.fn(() => {}) as unknown as typeof harness.runtime.appendEntry;
+
+    // Generate an artifact plan by providing user input
+    await harness.emitEvent('input', { text: 'Add caching layer to the API' });
+
+    strictEqual((harness.runtime.appendEntry as Mock<typeof harness.runtime.appendEntry>).mock.callCount(), 1);
+    const entry = (harness.runtime.appendEntry as Mock<typeof harness.runtime.appendEntry>).mock.calls[0]!
+      .arguments[1] as {
+      enabled: boolean;
+      planPath?: string;
+      slug?: string;
+    };
+    strictEqual(entry.enabled, true);
+    ok(entry.planPath?.includes('.pi/artifacts/plan-'));
+    ok(entry.slug?.startsWith('plan-'));
+    strictEqual(entry.planPath?.endsWith(`${entry.slug}.md`), true);
   });
 });
 

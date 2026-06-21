@@ -1,14 +1,18 @@
 import { strictEqual, ok } from 'node:assert';
 import { test } from 'node:test';
 import { tmpdir } from 'node:os';
+import { mkdirSync, writeFileSync, chmodSync } from 'node:fs';
+import { join, dirname } from 'node:path';
 import {
   generateSlugFromText,
   isPathWithinCwd,
   isPlanArtifactPath,
   isTempPath,
   isUnderArtifactDir,
+  isValidPlanFilePath,
   resolvePlanFilePath,
 } from '../../../extensions/plan-mode/plan-artifact.ts';
+import { withTempDir } from '../../../test/utils/temp-dir.ts';
 
 test('generateSlugFromText produces dated slug from text', () => {
   const slug = generateSlugFromText('Implement user authentication with OAuth2');
@@ -122,4 +126,81 @@ test('isPathWithinCwd rejects path outside cwd', () => {
 
 test('isPathWithinCwd rejects traversal escape', () => {
   strictEqual(isPathWithinCwd('/project/../other/foo.md', '/project'), false);
+});
+
+test('isValidPlanFilePath: accepts existing file', () => {
+  withTempDir('pi-plan-', (dir) => {
+    const file = join(dir, 'plans', 'foo.md');
+    mkdirSync(dirname(file), { recursive: true });
+    writeFileSync(file, '# Plan');
+    const result = isValidPlanFilePath(file, dir);
+    strictEqual(result.ok, true);
+  });
+});
+
+test('isValidPlanFilePath: accepts non-existing file in existing directory', () => {
+  withTempDir('pi-plan-', (dir) => {
+    mkdirSync(join(dir, 'plans'), { recursive: true });
+    const result = isValidPlanFilePath(join(dir, 'plans', 'foo.md'), dir);
+    strictEqual(result.ok, true);
+  });
+});
+
+test('isValidPlanFilePath: rejects path outside cwd', () => {
+  withTempDir('pi-plan-', (dir) => {
+    const result = isValidPlanFilePath('/other/foo.md', dir);
+    strictEqual(result.ok, false);
+    ok((result as { reason: string }).reason.includes('must be inside project'));
+  });
+});
+
+test('isValidPlanFilePath: rejects directory', () => {
+  withTempDir('pi-plan-', (dir) => {
+    mkdirSync(join(dir, 'plans'), { recursive: true });
+    const result = isValidPlanFilePath(join(dir, 'plans'), dir);
+    strictEqual(result.ok, false);
+    ok((result as { reason: string }).reason.includes('is a directory'));
+  });
+});
+
+test('isValidPlanFilePath: rejects missing parent directory', () => {
+  withTempDir('pi-plan-', (dir) => {
+    const result = isValidPlanFilePath(join(dir, 'missing', 'foo.md'), dir);
+    strictEqual(result.ok, false);
+    ok((result as { reason: string }).reason.includes('parent directory does not exist'));
+  });
+});
+
+test('isValidPlanFilePath: rejects EACCES permission error on target', () => {
+  withTempDir('pi-plan-', (dir) => {
+    const file = join(dir, 'plans', 'foo.md');
+    mkdirSync(dirname(file), { recursive: true });
+    chmodSync(dirname(file), 0o000);
+    try {
+      const result = isValidPlanFilePath(file, dir);
+      strictEqual(result.ok, false);
+      ok((result as { reason: string }).reason.includes('Permission denied'));
+    } finally {
+      chmodSync(dirname(file), 0o755);
+    }
+  });
+});
+
+test('isValidPlanFilePath: rejects unexpected statSync errors without throwing', () => {
+  withTempDir('pi-plan-', (dir) => {
+    const file = join(dir, 'plans', 'foo.md');
+    mkdirSync(dirname(file), { recursive: true });
+    writeFileSync(file, '# Plan');
+
+    const result = isValidPlanFilePath(file, dir, {
+      statSync: () => {
+        const err = new Error('Too many symbolic links') as NodeJS.ErrnoException;
+        err.code = 'ELOOP';
+        throw err;
+      },
+    });
+    strictEqual(result.ok, false);
+    ok((result as { reason: string }).reason.includes('Cannot validate plan file path'));
+    ok((result as { reason: string }).reason.includes('ELOOP'));
+  });
 });

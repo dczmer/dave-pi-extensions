@@ -9,8 +9,8 @@
  * Use --plan-file <path> to start with a specific plan file.
  */
 
-import { existsSync, mkdirSync, statSync } from 'node:fs';
-import { resolve, normalize } from 'node:path';
+import { existsSync, mkdirSync } from 'node:fs';
+import { resolve, normalize, basename } from 'node:path';
 import type { ExtensionAPI, ExtensionContext } from '@mariozechner/pi-coding-agent';
 import { Key } from '@mariozechner/pi-tui';
 import { isDestructiveCommand, PARSE_FAILURE_REASON } from './bash-guard.ts';
@@ -20,6 +20,9 @@ import {
   isPlanArtifactPath,
   isTempPath,
   resolvePlanFilePath,
+  isValidPlanFilePath,
+  stripQuotes,
+  sanitizeExtractedPlanPath,
 } from './plan-artifact.ts';
 
 const BLOCK_REASON =
@@ -117,33 +120,17 @@ export function isBlockedInput(text: string): boolean {
  * Supported patterns: "load plan from PATH", "use plan at PATH",
  * "refine plan PATH", "switch plan to PATH", "continue plan PATH".
  * Paths may be quoted to contain spaces; one surrounding pair is stripped.
+ * Trailing prose after conjunctions is ignored.
  *
  * @param text - Raw user input.
- * @returns The raw path string (still quoted if present), or undefined.
+ * @returns Cleaned path string, or undefined.
  */
 export function extractPlanPathFromInput(text: string): string | undefined {
   const trimmed = text.trim();
   const match = trimmed.match(
     /^(?:load plan from|load and refine|use plan at|use plan|refine plan|switch plan to|continue plan)\s+(.+)$/i,
   );
-  return match?.[1];
-}
-
-/**
- * Strip one pair of surrounding quotes from a path argument.
- *
- * @param rawPath - Path that may be wrapped in quotes.
- * @returns Path with surrounding quotes removed.
- */
-function stripQuotes(rawPath: string): string {
-  if (rawPath.length >= 2) {
-    const first = rawPath[0];
-    const last = rawPath[rawPath.length - 1];
-    if ((first === '"' && last === '"') || (first === "'" && last === "'")) {
-      return rawPath.slice(1, -1);
-    }
-  }
-  return rawPath;
+  return match?.[1] ? sanitizeExtractedPlanPath(match[1]) : undefined;
 }
 
 /**
@@ -288,10 +275,13 @@ export default function (pi: ExtensionAPI): void {
   let planModeEnabled = true;
   let currentPlanPath: string | undefined;
 
-  function persist(): void {
+  function persist(cwd: string): void {
     const entry: { enabled: boolean; slug?: string; planPath?: string } = { enabled: planModeEnabled };
     if (currentPlanPath) {
       entry.planPath = currentPlanPath;
+      if (isPlanArtifactPath(currentPlanPath, cwd)) {
+        entry.slug = basename(currentPlanPath).replace(/\.md$/, '');
+      }
     }
     pi.appendEntry('plan-mode-state', entry);
   }
@@ -327,25 +317,14 @@ export default function (pi: ExtensionAPI): void {
     const unquoted = stripQuotes(rawPath);
     const resolved = resolvePlanFilePath(unquoted, cwd);
 
-    if (!isPathWithinCwd(resolved, cwd)) {
-      const reason = `Plan file path must be inside project directory: ${rawPath}`;
-      if (options.notify !== false) ctx.ui.notify(reason, 'warning');
-      return { ok: false, reason };
-    }
-
-    try {
-      const stats = statSync(resolved);
-      if (stats.isDirectory()) {
-        const reason = `Plan file path is a directory: ${rawPath}`;
-        if (options.notify !== false) ctx.ui.notify(reason, 'warning');
-        return { ok: false, reason };
-      }
-    } catch {
-      // File does not exist yet; allow it.
+    const validation = isValidPlanFilePath(resolved, cwd);
+    if (!validation.ok) {
+      if (options.notify !== false) ctx.ui.notify(validation.reason, 'warning');
+      return { ok: false, reason: validation.reason };
     }
 
     currentPlanPath = resolved;
-    persist();
+    persist(cwd);
     if (options.notify !== false) {
       ctx.ui.notify(`Plan file set to ${resolved}`);
     }
@@ -360,7 +339,7 @@ export default function (pi: ExtensionAPI): void {
       notifyDisabled(ctx);
     }
     updateStatus(pi, planModeEnabled, ctx);
-    persist();
+    persist(ctx.cwd);
   }
 
   // Command
@@ -377,7 +356,7 @@ export default function (pi: ExtensionAPI): void {
         planModeEnabled = true;
         notifyEnabled(ctx);
         updateStatus(pi, true, ctx);
-        persist();
+        persist(ctx.cwd);
       }
     },
   });
@@ -439,7 +418,7 @@ export default function (pi: ExtensionAPI): void {
       const slug = generateSlugFromText(event.text);
       currentPlanPath = resolve(ctx.cwd, '.pi', 'artifacts', `${slug}.md`);
       ensureArtifactsDir(ctx.cwd);
-      persist();
+      persist(ctx.cwd);
     }
 
     if (isBlockedInput(event.text)) {
