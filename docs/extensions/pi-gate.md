@@ -75,6 +75,14 @@ This isn't perfect. It turns out parsing bash commands can get pretty complicate
 
 External files (outside of the project root directory) are also protected. I have hooked into the Read, Write, Edit, Find, Grep tools to compare the target file paths, and we extract file paths from any Bash tool calls and compare those as well.
 
+A path is allowed when any `externalAllow` entry (or session-approved pattern):
+
+1. exactly equals the path,
+2. is a directory prefix of the path — so `/home/dave/.local/share/uv` also allows everything under it, or
+3. matches the path as a glob (`*` crosses `/`).
+
+The same three rules apply uniformly to the session whitelist, project config, and global config. Trailing slashes on entries are ignored (`/nix/blahblah/` behaves like `/nix/blahblah`).
+
 ![pi-gate-path](../images/pi-gate-path.png)
 
 ## Session

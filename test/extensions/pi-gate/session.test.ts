@@ -1,7 +1,7 @@
 import { strictEqual } from 'node:assert';
 import { test } from 'node:test';
 import {
-  approveExternal,
+  approveExternalPattern,
   approveBashPattern,
   getSessionState,
   isExternalApproved,
@@ -9,10 +9,11 @@ import {
   resetSessionState,
 } from '../../../extensions/pi-gate/session.ts';
 
-test('approve and check external path', () => {
+test('approve and check external path (exact match)', () => {
   resetSessionState();
-  approveExternal('/tmp/test.txt');
+  approveExternalPattern('/tmp/test.txt');
   strictEqual(isExternalApproved('/tmp/test.txt'), true);
+  strictEqual(isExternalApproved('/tmp/test.txtx'), false);
 });
 
 test('approve and check bash pattern', () => {
@@ -21,10 +22,39 @@ test('approve and check bash pattern', () => {
   strictEqual(isBashPatternApproved('ls -la'), true);
 });
 
+test('directory prefix approves descendants', () => {
+  resetSessionState();
+  approveExternalPattern('/tmp/allowed-dir');
+  strictEqual(isExternalApproved('/tmp/allowed-dir/sub/file.txt'), true);
+  strictEqual(isExternalApproved('/tmp/allowed-dir'), true); // exact match
+});
+
+test('directory prefix rejects siblings and prefixes without slash', () => {
+  resetSessionState();
+  approveExternalPattern('/tmp/allowed-dir');
+  strictEqual(isExternalApproved('/tmp/allowed-dir2/x.txt'), false); // sibling, not descendant
+  strictEqual(isExternalApproved('/tmp/allowed'), false); // prefix without '/' is not a descendant
+});
+
+test('glob pattern with * crossing slashes', () => {
+  resetSessionState();
+  approveExternalPattern('/nix/blahblah/*');
+  strictEqual(isExternalApproved('/nix/blahblah/foo'), true);
+  strictEqual(isExternalApproved('/nix/blahblah/a/b/c'), true); // '*' crosses '/'
+  strictEqual(isExternalApproved('/nix/blahblah'), false);
+});
+
+test('trailing-slash entries are sanitized at check time', () => {
+  resetSessionState();
+  approveExternalPattern('/tmp/slashed-dir/');
+  strictEqual(isExternalApproved('/tmp/slashed-dir/file.txt'), true); // descendant after strip
+  strictEqual(isExternalApproved('/tmp/slashed-dir'), true); // exact after strip
+});
+
 test('multiple externals approved', () => {
   resetSessionState();
-  approveExternal('/tmp/a.txt');
-  approveExternal('/tmp/b.txt');
+  approveExternalPattern('/tmp/a.txt');
+  approveExternalPattern('/tmp/b.txt');
   strictEqual(isExternalApproved('/tmp/a.txt'), true);
   strictEqual(isExternalApproved('/tmp/b.txt'), true);
 });
@@ -39,9 +69,9 @@ test('multiple bash patterns approved', () => {
 
 test('getSessionState returns current state', () => {
   resetSessionState();
-  approveExternal('/tmp/x.txt');
+  approveExternalPattern('/tmp/x.txt');
   const s = getSessionState();
-  strictEqual(s.approvedExternals.has('/tmp/x.txt'), true);
+  strictEqual(s.approvedExternalPatterns.has('/tmp/x.txt'), true);
 });
 
 test('unapproved external returns false', () => {
@@ -62,9 +92,9 @@ test('session isolation (fresh session has no approvals)', () => {
 
 test('approving same path twice is idempotent', () => {
   resetSessionState();
-  approveExternal('/tmp/same.txt');
-  approveExternal('/tmp/same.txt');
-  strictEqual(getSessionState().approvedExternals.size, 1);
+  approveExternalPattern('/tmp/same.txt');
+  approveExternalPattern('/tmp/same.txt');
+  strictEqual(getSessionState().approvedExternalPatterns.size, 1);
 });
 
 test('approving same pattern twice is idempotent', () => {
@@ -76,6 +106,6 @@ test('approving same pattern twice is idempotent', () => {
 
 test('empty session state (fresh sets are empty)', () => {
   resetSessionState();
-  strictEqual(getSessionState().approvedExternals.size, 0);
+  strictEqual(getSessionState().approvedExternalPatterns.size, 0);
   strictEqual(getSessionState().approvedBashPatterns.size, 0);
 });

@@ -2,12 +2,12 @@ import { matchesGlob } from './matcher.ts';
 
 /** Per-session approvals that expire when pi exits. */
 export interface SessionState {
-  approvedExternals: Set<string>;
+  approvedExternalPatterns: Set<string>;
   approvedBashPatterns: Set<string>;
 }
 
 const state: SessionState = {
-  approvedExternals: new Set(),
+  approvedExternalPatterns: new Set(),
   approvedBashPatterns: new Set(),
 };
 
@@ -19,9 +19,9 @@ export function getSessionState(): SessionState {
   return state;
 }
 
-/** Mark an external file path as approved for the current session. */
-export function approveExternal(path: string): void {
-  state.approvedExternals.add(path);
+/** Mark an external path pattern as approved for the current session. */
+export function approveExternalPattern(pattern: string): void {
+  state.approvedExternalPatterns.add(pattern);
 }
 
 /** Mark a bash glob pattern as approved for the current session. */
@@ -30,10 +30,24 @@ export function approveBashPattern(pattern: string): void {
 }
 
 /**
- * Check whether an external file path has been approved during this session.
+ * Check whether an external path has been approved during this session.
+ *
+ * An entry approves the path when it:
+ *   1. exactly equals the path,
+ *   2. is a directory prefix of the path (entry + '/'),
+ *   3. matches the path as a glob (`*` crosses '/').
+ *
+ * Entries are stripped of trailing slashes before comparison (root `/`
+ * excepted).
  */
 export function isExternalApproved(path: string): boolean {
-  return state.approvedExternals.has(path);
+  for (const rawEntry of state.approvedExternalPatterns) {
+    const entry = rawEntry.length > 1 ? rawEntry.replace(/\/+$/, '') : rawEntry;
+    if (entry === path) return true;
+    if (path.startsWith(entry + '/')) return true;
+    if (matchesGlob(path, entry)) return true;
+  }
+  return false;
 }
 
 /**
@@ -48,6 +62,6 @@ export function isBashPatternApproved(command: string): boolean {
 
 /** Clear all in-memory session approvals (primarily for testing). */
 export function resetSessionState(): void {
-  state.approvedExternals.clear();
+  state.approvedExternalPatterns.clear();
   state.approvedBashPatterns.clear();
 }

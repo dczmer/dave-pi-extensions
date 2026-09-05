@@ -2,9 +2,8 @@
  * Context Usage Progress Bar Extension
  *
  * Adds a visual progress bar to the footer showing context window usage
- * with percentage and max size. The plan-mode indicator appears directly
- * on the left of the progress bar. Other extension statuses go on the
- * right before the model info.
+ * with percentage and max size. Extension statuses from other extensions
+ * go on the right before the model info.
  */
 
 import type { ExtensionAPI, ExtensionContext } from '@mariozechner/pi-coding-agent';
@@ -58,12 +57,9 @@ function installFooter(ctx: ExtensionContext) {
         const usage = ctx.getContextUsage();
         const model = ctx.model;
 
-        // Pull plan-mode status to the left
-        const allStatuses = footerData.getExtensionStatuses();
-        const planStatus = allStatuses.get('plan-mode');
-        const otherStatuses = [...allStatuses.entries()].filter(([k]) => k !== 'plan-mode').map(([, v]) => v);
+        const otherStatuses = [...footerData.getExtensionStatuses().values()];
 
-        // --- Left side: plan status + context bar ---
+        // --- Left side: context bar ---
         let contextSection = '';
         if (usage && model?.contextWindow) {
           const used = usage.tokens ?? 0;
@@ -77,10 +73,6 @@ function installFooter(ctx: ExtensionContext) {
             'muted',
             `(${formatTokens(used)}/${formatTokens(max)})`,
           )}`;
-        }
-
-        if (planStatus) {
-          contextSection = planStatus + (contextSection ? '  ' + contextSection : '');
         }
 
         // --- Right side: other extension statuses + model info ---

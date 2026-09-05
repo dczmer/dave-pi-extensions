@@ -53,3 +53,26 @@ export function matchesAnyGlob(value: string, patterns: string[]): boolean {
   }
   return false;
 }
+
+/**
+ * Test whether a path is allowed by any entry, using pi-gate's uniform
+ * whitelist semantics: exact match, directory-prefix match, or glob match.
+ * First match wins; any match allows.
+ *
+ * Entries are stripped of trailing slashes before comparison (root `/`
+ * excepted) so raw config strings like `/nix/blahblah/` behave identically
+ * to `/nix/blahblah`.
+ *
+ * @param path - Normalized absolute path to check.
+ * @param entries - Whitelist entries (plain paths, directory paths, or globs).
+ * @returns `true` if any entry approves the path.
+ */
+export function matchesAnyWhitelistEntry(path: string, entries: Iterable<string>): boolean {
+  for (const rawEntry of entries) {
+    const entry = rawEntry.length > 1 ? rawEntry.replace(/\/+$/, '') : rawEntry;
+    if (entry === path) return true;
+    if (path.startsWith(entry + '/')) return true;
+    if (matchesGlob(path, entry)) return true;
+  }
+  return false;
+}

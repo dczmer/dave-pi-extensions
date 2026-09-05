@@ -1,6 +1,6 @@
 import { strictEqual } from 'node:assert';
 import { test } from 'node:test';
-import { matchesGlob, matchesAnyGlob } from '../../../extensions/pi-gate/matcher.ts';
+import { matchesGlob, matchesAnyGlob, matchesAnyWhitelistEntry } from '../../../extensions/pi-gate/matcher.ts';
 
 test('exact string match', () => {
   strictEqual(matchesGlob('ls', 'ls'), true);
@@ -77,4 +77,35 @@ test('pattern longer than value returns false', () => {
 
 test('value longer than pattern returns false', () => {
   strictEqual(matchesGlob('ls -l', 'ls'), false);
+});
+
+test('whitelist: exact entry match', () => {
+  strictEqual(matchesAnyWhitelistEntry('/tmp/a.txt', ['/tmp/a.txt']), true);
+  strictEqual(matchesAnyWhitelistEntry('/tmp/a.txtx', ['/tmp/a.txt']), false);
+});
+
+test('whitelist: directory prefix approves descendants', () => {
+  strictEqual(matchesAnyWhitelistEntry('/tmp/allowed-dir/sub/file.txt', ['/tmp/allowed-dir']), true);
+  strictEqual(matchesAnyWhitelistEntry('/tmp/allowed-dir', ['/tmp/allowed-dir']), true);
+});
+
+test('whitelist: directory prefix rejects siblings', () => {
+  strictEqual(matchesAnyWhitelistEntry('/tmp/allowed-dir2/x.txt', ['/tmp/allowed-dir']), false);
+  strictEqual(matchesAnyWhitelistEntry('/tmp/allowed', ['/tmp/allowed-dir']), false);
+});
+
+test('whitelist: glob entry with * crossing slashes', () => {
+  strictEqual(matchesAnyWhitelistEntry('/nix/blahblah/foo', ['/nix/blahblah/*']), true);
+  strictEqual(matchesAnyWhitelistEntry('/nix/blahblah/a/b/c', ['/nix/blahblah/*']), true);
+  strictEqual(matchesAnyWhitelistEntry('/nix/blahblah', ['/nix/blahblah/*']), false);
+});
+
+test('whitelist: trailing slashes stripped from config entries', () => {
+  strictEqual(matchesAnyWhitelistEntry('/nix/blahblah/file.txt', ['/nix/blahblah/']), true);
+  strictEqual(matchesAnyWhitelistEntry('/nix/blahblah', ['/nix/blahblah/']), true);
+});
+
+test('whitelist: any matching entry allows', () => {
+  strictEqual(matchesAnyWhitelistEntry('/b/match', ['/a/*', '/b/*', '/c/*']), true);
+  strictEqual(matchesAnyWhitelistEntry('/z/match', ['/a/*', '/b/*', '/c/*']), false);
 });

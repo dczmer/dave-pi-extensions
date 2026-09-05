@@ -1,7 +1,7 @@
 import bashParse from 'bash-parser';
 
 // ---------------------------------------------------------------------------
-// AST types (shared by pi-gate and plan-mode)
+// AST types (used by pi-gate)
 // ---------------------------------------------------------------------------
 
 export interface Loc {

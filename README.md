@@ -14,7 +14,7 @@ However, you could just ask `pi` to read this repository and say "I want to impl
 
 ## Dependencies
 
-I'd like to say "no external dependencies" besides the pI SDK and node built-ins, but I decided to add [bash-parser](https://github.com/vorpaljs/bash-parser/tree/master) to improve the [plan-mode](./docs/extensions/plan-mode.md) and [pi-gate](./docs/extensions/pi-gate.md) extensions by more accurately parsing bash commands instead of trying to do it with regular expressions. This added a few transitive dependencies but they were all very simple and seemingly benign.
+I'd like to say "no external dependencies" besides the pI SDK and node built-ins, but I decided to add [bash-parser](https://github.com/vorpaljs/bash-parser/tree/master) to improve the [pi-gate](./docs/extensions/pi-gate.md) extension by more accurately parsing bash commands instead of trying to do it with regular expressions. This added a few transitive dependencies but they were all very simple and seemingly benign.
 
 And then the "dev dependencies" add a ton of transitive dependencies but those are not part of the extensions a user would install.
 
@@ -32,20 +32,6 @@ Simple 1-line context bar with token usage, provider and model, git branch, and 
 
 [Read more here](./docs/extensions/context-usage-bar.md).
 
-### plan-mode
-
-Pi doesn't ship with a "plan mode" feature. Instead, you can just ask it to "present a detailed implementation plan" and save it to a file.
-
-But if you forget to word it properly, or if the model just decides to start implementing it, you don't have a lot of control over what it's going to do.
-
-So this extension implements a simple handler to hook into tool calls to prevent the model from making any changes and updates the system prompt to tell it to "present a plan" instead of taking an action. It also has a visual indicator that shows up in the context bar when plan mode is active.
-
-> TODO: Grab a better preview image with a proper plan.
-
-![plan-mode](./docs/images/plan-mode.png)
-
-[Read more here](./docs/extensions/plan-mode.md).
-
 ### pi-gate (SG1)
 
 `Pi` also doesn't come with any "guard rails", like asking for approval before running bash commands or modifying files. The suggestion is that you should run `pi` in a container or sandbox and/or use a community plugin (or build your own).
@@ -59,14 +45,6 @@ I made my own, and I stripped it down to work the way I like, based on a simple 
 I do also run `pi` in a [Bubblewrap](https://github.com/containers/bubblewrap) sandbox.
 
 [Read more here](./docs/extensions/pi-gate.md).
-
-### rtk-bash-wrapper
-
-> NOTE: I'm going to replace this with [pi-rtk](https://github.com/mcowger/pi-rtk).
-
-### tmux-agents
-
-TODO
 
 ## Themes
 

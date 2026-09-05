@@ -2,8 +2,9 @@ import { strictEqual, deepStrictEqual } from 'node:assert';
 import { test } from 'node:test';
 import { mkdirSync, readFileSync, existsSync } from 'node:fs';
 import { join, dirname } from 'node:path';
+import { homedir } from 'node:os';
 import { checkFileAccess } from '../../../extensions/pi-gate/file-access.ts';
-import { approveExternal, resetSessionState } from '../../../extensions/pi-gate/session.ts';
+import { approveExternalPattern, isExternalApproved, resetSessionState } from '../../../extensions/pi-gate/session.ts';
 import { withTempDir } from '../../utils/temp-dir.ts';
 import { createQueuedUIContext } from '../../utils/pi-context.ts';
 import { createConfigResult } from './utils/config.ts';
@@ -28,7 +29,7 @@ test('external file allowed when in config externalAllow', async () => {
 
 test('external file allowed when in session approved list', async () => {
   resetSessionState();
-  approveExternal('/tmp/bar.txt');
+  approveExternalPattern('/tmp/bar.txt');
   const configResult = createConfigResult();
   const ctx = createQueuedUIContext();
   const result = await checkFileAccess('/tmp/bar.txt', '/fake/cwd', configResult, ctx);
@@ -117,4 +118,48 @@ test('merged config includes both global and project patterns', async () => {
   const ctx = createQueuedUIContext();
   const result = await checkFileAccess('/global/file.txt', '/fake/cwd', configResult, ctx);
   strictEqual(result, true);
+});
+
+test('config externalAllow directory entry allows descendants without prompt', async () => {
+  const configResult = createConfigResult({ merged: { bashAllow: [], externalAllow: ['/nix/blahblah'] } });
+  // Empty queues: any prompt would resolve to denial, so `true` proves silence.
+  const ctx = createQueuedUIContext();
+  const result = await checkFileAccess('/nix/blahblah/sub/deep.txt', '/fake/cwd', configResult, ctx);
+  strictEqual(result, true);
+});
+
+test('regression: "No" (not persisted) still whitelists the pattern session-wide', async () => {
+  resetSessionState();
+  const configResult = createConfigResult();
+
+  const approvingCtx = createQueuedUIContext();
+  approvingCtx.queueEditor('/nix/blahblah/*'); // user accepts suggested glob
+  approvingCtx.queueSelect('No'); // user declines persistence
+
+  const first = await checkFileAccess('/nix/blahblah/foo', '/fake/cwd', configResult, approvingCtx);
+  strictEqual(first, true);
+
+  // Subsequent accesses covered by the pattern must NOT prompt.
+  const silentCtx = createQueuedUIContext();
+  strictEqual(await checkFileAccess('/nix/blahblah/bar', '/fake/cwd', configResult, silentCtx), true);
+  strictEqual(await checkFileAccess('/nix/blahblah/sub/deep.txt', '/fake/cwd', configResult, silentCtx), true);
+
+  // Unrelated paths must still prompt (empty queue → editor returns undefined → denied).
+  const unrelatedCtx = createQueuedUIContext();
+  strictEqual(await checkFileAccess('/nix/other/x', '/fake/cwd', configResult, unrelatedCtx), false);
+});
+
+test('tilde and relative patterns are normalized before session storage', async () => {
+  resetSessionState();
+  const configResult = createConfigResult();
+
+  const ctx = createQueuedUIContext();
+  ctx.queueEditor('~/notes/*');
+  ctx.queueSelect('No');
+
+  const result = await checkFileAccess('~/notes/today.md', '/fake/cwd', configResult, ctx);
+  strictEqual(result, true);
+
+  // The stored pattern must be normalized against the real home directory.
+  strictEqual(isExternalApproved(join(homedir(), 'notes', 'upcoming.md')), true);
 });

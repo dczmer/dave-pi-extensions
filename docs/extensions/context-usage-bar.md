@@ -26,4 +26,4 @@ The color coding is based on a theoretical threshold of about 80K tokens, not ba
 
 ![Extensions](../images/custom-context-bar-extensions.png)
 
-Context bar components from other extensions display directly to the left of the progress bar (example: my [plan-mode extension](./plan-mode.md)).
+Context bar components from other extensions display directly to the left of the progress bar.

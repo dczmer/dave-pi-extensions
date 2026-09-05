@@ -1,8 +1,8 @@
 import type { ConfigResult } from './config.ts';
 import { saveConfig } from './config.ts';
 import { normalizePath, classifyPath } from './guards.ts';
-import { matchesAnyGlob } from './matcher.ts';
-import { isExternalApproved, approveExternal } from './session.ts';
+import { matchesAnyWhitelistEntry } from './matcher.ts';
+import { isExternalApproved, approveExternalPattern } from './session.ts';
 import { confirmAddToConfigWithTarget, promptPattern } from './prompts.ts';
 import type { ExtensionContext } from './prompts.ts';
 
@@ -12,7 +12,9 @@ import type { ExtensionContext } from './prompts.ts';
  * Project paths are allowed by default; external paths must match an
  * `externalAllow` pattern or receive explicit user approval.
  * When the user approves an external path they are also prompted to persist a
- * glob pattern to the project or global config.
+ * glob pattern to the project or global config. The session whitelist stores
+ * the normalized pattern (not just the concrete path), so choosing not to
+ * persist still approves every path the pattern covers for the session.
  *
  * @param filePath - Raw path from the tool call input.
  * @param cwd - Project working directory.
@@ -32,28 +34,32 @@ export async function checkFileAccess(
 
   if (classification === 'project') {
     return true;
-  } else {
-    if (isExternalApproved(normalized)) return true;
-    if (matchesAnyGlob(normalized, config.externalAllow)) return true;
-
-    const pattern = await promptPattern(filePath, 'Allow external path pattern (Esc to reject)', ctx);
-    if (!pattern) return false;
-
-    approveExternal(normalized);
-    if (pattern) {
-      const addResult = await confirmAddToConfigWithTarget('externalAllow', ctx, pattern);
-      if (addResult.confirmed) {
-        if (addResult.target === 'project') {
-          configResult.project.externalAllow.push(pattern);
-          saveConfig(configResult.project, configResult.projectPath);
-        } else {
-          configResult.global.externalAllow.push(pattern);
-          saveConfig(configResult.global, configResult.globalPath);
-        }
-        // Update merged config to include the new pattern
-        configResult.merged.externalAllow.push(pattern);
-      }
-    }
-    return true;
   }
+
+  // Session whitelist: exact / directory-prefix / glob
+  if (isExternalApproved(normalized)) return true;
+
+  // Config patterns: same three rules as session
+  if (matchesAnyWhitelistEntry(normalized, config.externalAllow)) return true;
+
+  const pattern = await promptPattern(filePath, 'Allow external path pattern (Esc to reject)', ctx);
+  if (!pattern) return false;
+
+  // Store the normalized *pattern*, not the concrete path, so the session
+  // whitelist covers every path the pattern matches.
+  approveExternalPattern(normalizePath(pattern, cwd));
+
+  const addResult = await confirmAddToConfigWithTarget('externalAllow', ctx, pattern);
+  if (addResult.confirmed) {
+    if (addResult.target === 'project') {
+      configResult.project.externalAllow.push(pattern);
+      saveConfig(configResult.project, configResult.projectPath);
+    } else {
+      configResult.global.externalAllow.push(pattern);
+      saveConfig(configResult.global, configResult.globalPath);
+    }
+    // Update merged config to include the new pattern
+    configResult.merged.externalAllow.push(pattern);
+  }
+  return true;
 }
