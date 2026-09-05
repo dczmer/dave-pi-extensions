@@ -4,7 +4,12 @@ import { mkdirSync, readFileSync, existsSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { homedir } from 'node:os';
 import { checkFileAccess } from '../../../extensions/pi-gate/file-access.ts';
-import { approveExternalPattern, isExternalApproved, resetSessionState } from '../../../extensions/pi-gate/session.ts';
+import {
+  approveExternalPattern,
+  isExternalApproved,
+  resetSessionState,
+  setExternalEnabled,
+} from '../../../extensions/pi-gate/session.ts';
 import { withTempDir } from '../../utils/temp-dir.ts';
 import { createQueuedUIContext } from '../../utils/pi-context.ts';
 import { createConfigResult } from './utils/config.ts';
@@ -162,4 +167,18 @@ test('tilde and relative patterns are normalized before session storage', async 
 
   // The stored pattern must be normalized against the real home directory.
   strictEqual(isExternalApproved(join(homedir(), 'notes', 'upcoming.md')), true);
+});
+
+test('external file allowed without prompting when external guard is disabled', async () => {
+  resetSessionState();
+  setExternalEnabled(false);
+  try {
+    const configResult = createConfigResult();
+    const ctx = createQueuedUIContext();
+    const result = await checkFileAccess('/etc/passwd', '/fake/cwd', configResult, ctx);
+    strictEqual(result, true);
+    strictEqual(ctx._notifications.length, 0);
+  } finally {
+    resetSessionState();
+  }
 });

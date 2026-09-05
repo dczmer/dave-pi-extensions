@@ -1,14 +1,20 @@
 import { matchesGlob } from './matcher.ts';
 
-/** Per-session approvals that expire when pi exits. */
+/** Per-session approvals and guard toggles; everything expires when pi exits. */
 export interface SessionState {
   approvedExternalPatterns: Set<string>;
   approvedBashPatterns: Set<string>;
+  /** Whether the bash command-pattern guard is active this session. */
+  bashEnabled: boolean;
+  /** Whether the external file-path guard is active this session. */
+  externalEnabled: boolean;
 }
 
 const state: SessionState = {
   approvedExternalPatterns: new Set(),
   approvedBashPatterns: new Set(),
+  bashEnabled: true,
+  externalEnabled: true,
 };
 
 /**
@@ -27,6 +33,34 @@ export function approveExternalPattern(pattern: string): void {
 /** Mark a bash glob pattern as approved for the current session. */
 export function approveBashPattern(pattern: string): void {
   state.approvedBashPatterns.add(pattern);
+}
+
+/**
+ * Check whether the bash command-pattern guard is active this session.
+ * When disabled, bash commands skip pattern matching and prompting, but
+ * file paths inside commands are still checked by the external-path guard.
+ */
+export function isBashEnabled(): boolean {
+  return state.bashEnabled;
+}
+
+/** Enable or disable the bash command-pattern guard for this session. */
+export function setBashEnabled(enabled: boolean): void {
+  state.bashEnabled = enabled;
+}
+
+/**
+ * Check whether the external file-path guard is active this session.
+ * When disabled, external paths are allowed for both file tools and paths
+ * referenced inside bash commands.
+ */
+export function isExternalEnabled(): boolean {
+  return state.externalEnabled;
+}
+
+/** Enable or disable the external file-path guard for this session. */
+export function setExternalEnabled(enabled: boolean): void {
+  state.externalEnabled = enabled;
 }
 
 /**
@@ -60,8 +94,10 @@ export function isBashPatternApproved(command: string): boolean {
   return false;
 }
 
-/** Clear all in-memory session approvals (primarily for testing). */
+/** Clear all in-memory session approvals and restore both guards (primarily for testing). */
 export function resetSessionState(): void {
   state.approvedExternalPatterns.clear();
   state.approvedBashPatterns.clear();
+  state.bashEnabled = true;
+  state.externalEnabled = true;
 }

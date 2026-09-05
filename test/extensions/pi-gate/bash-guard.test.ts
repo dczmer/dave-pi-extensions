@@ -3,7 +3,12 @@ import { test } from 'node:test';
 import { mkdirSync, readFileSync, existsSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { checkBashCommand, parseCommandStatements } from '../../../extensions/pi-gate/bash-guard.ts';
-import { resetSessionState, approveBashPattern } from '../../../extensions/pi-gate/session.ts';
+import {
+  resetSessionState,
+  approveBashPattern,
+  setBashEnabled,
+  setExternalEnabled,
+} from '../../../extensions/pi-gate/session.ts';
 import { withTempDir } from '../../utils/temp-dir.ts';
 import { createQueuedUIContext } from '../../utils/pi-context.ts';
 import { createConfigResult } from './utils/config.ts';
@@ -297,4 +302,50 @@ test('unparsable command: user rejects blocks', async () => {
   strictEqual(result, false);
   strictEqual(ctx._notifications.length, 1);
   strictEqual(ctx._notifications[0]!.message, 'Command not parsable — manual approval required');
+});
+
+test('unknown command allowed without prompting when bash guard is disabled', async () => {
+  resetSessionState();
+  setBashEnabled(false);
+  try {
+    const configResult = createConfigResult();
+    const ctx = createQueuedUIContext();
+    const result = await checkBashCommand('xyz-unknown-cmd arg', '/fake/cwd', configResult, ctx);
+    strictEqual(result, true);
+    strictEqual(ctx._notifications.length, 0);
+  } finally {
+    resetSessionState();
+  }
+});
+
+test('external paths inside a command still checked when bash guard is disabled', async () => {
+  resetSessionState();
+  setBashEnabled(false);
+  try {
+    const configResult = createConfigResult();
+    const ctx = createQueuedUIContext();
+    ctx.queueEditor(null); // reject the external-path pattern prompt
+    const result = await checkBashCommand('cat /etc/passwd', '/fake/cwd', configResult, ctx);
+    strictEqual(result, false);
+  } finally {
+    resetSessionState();
+  }
+});
+
+test('external paths inside a command allowed without prompting when external guard is disabled', async () => {
+  resetSessionState();
+  setExternalEnabled(false);
+  try {
+    const configResult = createConfigResult({
+      merged: { bashAllow: ['cat *'], externalAllow: [] },
+      project: { bashAllow: ['cat *'], externalAllow: [] },
+      global: { bashAllow: [], externalAllow: [] },
+    });
+    const ctx = createQueuedUIContext();
+    const result = await checkBashCommand('cat /etc/passwd', '/fake/cwd', configResult, ctx);
+    strictEqual(result, true);
+    strictEqual(ctx._notifications.length, 0);
+  } finally {
+    resetSessionState();
+  }
 });

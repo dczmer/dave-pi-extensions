@@ -2,6 +2,7 @@ import type { ExtensionAPI } from '@mariozechner/pi-coding-agent';
 import { loadConfig, type ConfigResult } from './config.ts';
 import { checkBashCommand } from './bash-guard.ts';
 import { checkFileAccess } from './file-access.ts';
+import { runPiGateCommand, piGateCompletions } from './command.ts';
 
 /**
  * pi-gate extension: permissive-by-default file & bash access gate.
@@ -10,8 +11,17 @@ import { checkFileAccess } from './file-access.ts';
  * `edit`, `grep`, and `find` tool invocations.  Project paths are allowed
  * by default; external paths and new bash
  * commands require explicit user approval during the session.
+ *
+ * Registers the `/pi-gate` command to toggle the bash and external-path
+ * guards independently for the current session (both default to on).
  */
 export default function (pi: ExtensionAPI) {
+  pi.registerCommand('pi-gate', {
+    description: 'Toggle pi-gate guards (usage: /pi-gate [bash|external] [on|off], or /pi-gate status)',
+    getArgumentCompletions: (prefix) => piGateCompletions(prefix),
+    handler: async (args, ctx) => runPiGateCommand(args, ctx),
+  });
+
   pi.on('tool_call', async (event, ctx) => {
     const configResult: ConfigResult = loadConfig(ctx.cwd);
 

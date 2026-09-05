@@ -7,6 +7,10 @@ import {
   isExternalApproved,
   isBashPatternApproved,
   resetSessionState,
+  isBashEnabled,
+  setBashEnabled,
+  isExternalEnabled,
+  setExternalEnabled,
 } from '../../../extensions/pi-gate/session.ts';
 
 test('approve and check external path (exact match)', () => {
@@ -108,4 +112,36 @@ test('empty session state (fresh sets are empty)', () => {
   resetSessionState();
   strictEqual(getSessionState().approvedExternalPatterns.size, 0);
   strictEqual(getSessionState().approvedBashPatterns.size, 0);
+});
+
+test('guards default to enabled in a fresh session', () => {
+  resetSessionState();
+  strictEqual(isBashEnabled(), true);
+  strictEqual(isExternalEnabled(), true);
+});
+
+test('bash guard can be disabled and re-enabled', () => {
+  resetSessionState();
+  setBashEnabled(false);
+  strictEqual(isBashEnabled(), false);
+  strictEqual(isExternalEnabled(), true); // independent
+  setBashEnabled(true);
+  strictEqual(isBashEnabled(), true);
+});
+
+test('external guard can be disabled and re-enabled', () => {
+  resetSessionState();
+  setExternalEnabled(false);
+  strictEqual(isExternalEnabled(), false);
+  strictEqual(isBashEnabled(), true); // independent
+  setExternalEnabled(true);
+  strictEqual(isExternalEnabled(), true);
+});
+
+test('resetSessionState restores both guards to enabled', () => {
+  setBashEnabled(false);
+  setExternalEnabled(false);
+  resetSessionState();
+  strictEqual(isBashEnabled(), true);
+  strictEqual(isExternalEnabled(), true);
 });

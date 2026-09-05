@@ -2,7 +2,7 @@ import type { ConfigResult } from './config.ts';
 import { saveConfig } from './config.ts';
 import { normalizePath, classifyPath } from './guards.ts';
 import { matchesAnyWhitelistEntry } from './matcher.ts';
-import { isExternalApproved, approveExternalPattern } from './session.ts';
+import { isExternalApproved, approveExternalPattern, isExternalEnabled } from './session.ts';
 import { confirmAddToConfigWithTarget, promptPattern } from './prompts.ts';
 import type { ExtensionContext } from './prompts.ts';
 
@@ -28,6 +28,9 @@ export async function checkFileAccess(
   configResult: ConfigResult,
   ctx: ExtensionContext,
 ): Promise<boolean> {
+  // Session toggle: external-path guard disabled entirely.
+  if (!isExternalEnabled()) return true;
+
   const config = configResult.merged;
   const normalized = normalizePath(filePath, cwd);
   const classification = classifyPath(normalized, cwd);
