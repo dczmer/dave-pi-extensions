@@ -20,7 +20,8 @@
   },
   "peerDependencies": {
     "@mariozechner/pi": "^0.67.4",
-    "@mariozechner/pi-coding-agent": "^0.27.4"
+    "@mariozechner/pi-coding-agent": "^0.72.1",
+    "@mariozechner/pi-tui": "*"
   },
   "scripts": {
     "test": "node --test test/**/*.test.ts",
