@@ -43,11 +43,11 @@ async function runFragmentPicker(mode: FragmentMode, ctx: ExtensionContext): Pro
  * picker.
  */
 export default function (pi: ExtensionAPI) {
-  pi.registerShortcut(Key.ctrlShift('f'), {
+  pi.registerShortcut(Key.ctrlAlt('a'), {
     description: 'Append prompt fragment(s) to the editor',
     handler: async (ctx) => runFragmentPicker('append', ctx),
   });
-  pi.registerShortcut(Key.ctrlShift('b'), {
+  pi.registerShortcut(Key.ctrlAlt('b'), {
     description: 'Prepend prompt fragment(s) to the editor',
     handler: async (ctx) => runFragmentPicker('prepend', ctx),
   });
