@@ -86,17 +86,17 @@ test('formatTokens formats millions with M suffix', () => {
   strictEqual(formatTokens(2_500_000), '2.5M');
 });
 
-test('renderGateIndicator colors the circle success when enabled', () => {
+test('renderGateIndicator colors the letter success when enabled', () => {
   const theme = mockTheme();
   const result = renderGateIndicator('B', true, theme as never);
-  strictEqual(result, '<border>|</border> <success>●</success> B ');
+  strictEqual(result, '<border>|</border> <success>B</success> ');
   strictEqual(result.startsWith('<border>|</border>'), true);
 });
 
-test('renderGateIndicator colors the circle error when disabled', () => {
+test('renderGateIndicator colors the letter error when disabled', () => {
   const theme = mockTheme();
   const result = renderGateIndicator('E', false, theme as never);
-  strictEqual(result, '<border>|</border> <error>●</error> E ');
+  strictEqual(result, '<border>|</border> <error>E</error> ');
 });
 
 interface FakePi {
@@ -175,40 +175,40 @@ function resetGateState() {
 test('footer omits gate indicators when pi-gate is not loaded', async (t) => {
   t.after(resetGateState);
   const line = await renderFooterLine({ piGateLoaded: false });
-  strictEqual(line.includes('●'), false);
+  strictEqual(line.includes('<success>B</success>'), false);
   strictEqual(line.includes('33%'), true);
 });
 
-test('footer shows both gate indicators with success circles when pi-gate is loaded', async (t) => {
+test('footer shows both gate indicators with success letters when pi-gate is loaded', async (t) => {
   t.after(resetGateState);
   const line = await renderFooterLine({ piGateLoaded: true });
   strictEqual(
     line.includes(
-      '<border>|</border> <success>●</success> B <border>|</border> <success>●</success> E <border>|</border>',
+      '<border>|</border> <success>B</success> <border>|</border> <success>E</success> <border>|</border>',
     ),
     true,
   );
   strictEqual(line.includes('33%'), true);
 });
 
-test('footer flips the B circle to error when the bash guard is disabled', async (t) => {
+test('footer flips the B indicator to error when the bash guard is disabled', async (t) => {
   t.after(resetGateState);
   const line = await renderFooterLine({ piGateLoaded: true, bashEnabled: false });
-  strictEqual(line.includes('<error>●</error> B '), true);
-  strictEqual(line.includes('<success>●</success> E '), true);
+  strictEqual(line.includes('<error>B</error> '), true);
+  strictEqual(line.includes('<success>E</success> '), true);
 });
 
-test('footer flips the E circle to error when the external guard is disabled', async (t) => {
+test('footer flips the E indicator to error when the external guard is disabled', async (t) => {
   t.after(resetGateState);
   const line = await renderFooterLine({ piGateLoaded: true, externalEnabled: false });
-  strictEqual(line.includes('<success>●</success> B '), true);
-  strictEqual(line.includes('<error>●</error> E '), true);
+  strictEqual(line.includes('<success>B</success> '), true);
+  strictEqual(line.includes('<error>E</error> '), true);
 });
 
 test('footer renders gate indicators even without context usage', async (t) => {
   t.after(resetGateState);
   const line = await renderFooterLine({ piGateLoaded: true, withUsage: false });
-  strictEqual(line.startsWith('<border>|</border> <success>●</success> B '), true);
+  strictEqual(line.startsWith('<border>|</border> <success>B</success> '), true);
   strictEqual(line.includes('%'), false); // no context bar, indicators only
 });
 

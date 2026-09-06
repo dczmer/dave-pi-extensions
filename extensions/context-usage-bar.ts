@@ -48,13 +48,13 @@ export function formatTokens(n: number): string {
 }
 
 /**
- * Render one pi-gate indicator cell: `| ● X ` with the circle colored by
+ * Render one pi-gate indicator cell: `| X ` with the guard letter colored by
  * guard state (`success` when enabled, `error` when disabled) and the
  * separator in the theme's `border` color.
  */
 export function renderGateIndicator(label: 'B' | 'E', enabled: boolean, theme: Theme): string {
-  const circle = theme.fg(enabled ? 'success' : 'error', '●');
-  return `${theme.fg('border', '|')} ${circle} ${label} `;
+  const letter = theme.fg(enabled ? 'success' : 'error', label);
+  return `${theme.fg('border', '|')} ${letter} `;
 }
 
 function installFooter(ctx: ExtensionContext, pi: ExtensionAPI) {
