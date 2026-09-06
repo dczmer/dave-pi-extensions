@@ -191,10 +191,14 @@ test('/pi-gate with no args applies the picker selection', async () => {
     mkdirSync(join(dir, '.pi', 'extensions'), { recursive: true });
     const harness = await createPiTestHarness(piGateExtension, dir);
 
-    const select = mock.fn(async () => 'external off');
+    let call = 0;
+    const select = mock.fn(async () => {
+      call += 1;
+      return call === 1 ? 'external (ON)' : undefined; // toggle, then cancel
+    });
     await harness.command('pi-gate').execute('', { ui: createUIContext({ select }) });
 
-    strictEqual(select.mock.calls.length, 1);
+    strictEqual(select.mock.calls.length, 2); // toggle, then cancel exits
     strictEqual(isExternalEnabled(), false);
     strictEqual(isBashEnabled(), true);
     resetSessionState();

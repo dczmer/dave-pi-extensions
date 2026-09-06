@@ -119,21 +119,45 @@ test('partial usage warns and leaves state unchanged', async () => {
   resetSessionState();
 });
 
-test('no args opens the picker and applies the selected toggle', async () => {
+test('no args opens the picker with one state-labelled entry per guard', async () => {
   resetSessionState();
-  let pickerOptions: string[] = [];
+  const seenOptions: string[][] = [];
+  let call = 0;
   const select = mock.fn(async (_title: string, options: string[]) => {
-    pickerOptions = options;
-    return 'external off';
+    seenOptions.push([...options]);
+    call += 1;
+    return call === 1 ? 'bash (ON)' : undefined; // toggle bash, then cancel
   });
   const { notify, calls } = createNotifySpy();
   const ctx = createCommandContext({ ui: createUIContext({ select, notify }) });
 
   await runPiGateCommand('', ctx);
 
-  strictEqual(select.mock.calls.length, 1);
-  deepStrictEqualSet(pickerOptions, ['bash on', 'bash off', 'external on', 'external off']);
+  // Two entries labelled with current state; selecting flips and re-shows.
+  strictEqual(seenOptions.length, 2);
+  deepStrictEqualSet(seenOptions[0]!, ['bash (ON)', 'external (ON)']);
+  deepStrictEqualSet(seenOptions[1]!, ['bash (OFF)', 'external (ON)']); // label refreshed
+
+  strictEqual(isBashEnabled(), false);
+  strictEqual(isExternalEnabled(), true);
+  strictEqual(calls[0]!.message, 'pi-gate: bash guard OFF (session)');
+  resetSessionState();
+});
+
+test('picker toggles external guard when its entry is selected', async () => {
+  resetSessionState();
+  let call = 0;
+  const select = mock.fn(async () => {
+    call += 1;
+    return call === 1 ? 'external (ON)' : undefined;
+  });
+  const { notify, calls } = createNotifySpy();
+  const ctx = createCommandContext({ ui: createUIContext({ select, notify }) });
+
+  await runPiGateCommand('', ctx);
+
   strictEqual(isExternalEnabled(), false);
+  strictEqual(isBashEnabled(), true);
   strictEqual(calls[0]!.message, 'pi-gate: external guard OFF (session)');
   resetSessionState();
 });

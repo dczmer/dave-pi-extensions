@@ -43,12 +43,41 @@ export function piGateCompletions(prefix: string): Array<{ value: string; label:
   return filtered.length > 0 ? filtered : null;
 }
 
+/** Label for one picker entry, reflecting the guard's current state. */
+function pickerLabel(system: GuardSystem): string {
+  const enabled = system === 'bash' ? isBashEnabled() : isExternalEnabled();
+  return `${system} (${enabled ? 'ON' : 'OFF'})`;
+}
+
+/**
+ * Run the interactive picker: one entry per guard. Selecting an entry
+ * flips that guard and re-shows the picker with refreshed labels; the
+ * user exits by cancelling the picker.
+ */
+async function runPicker(ctx: ExtensionCommandContext): Promise<void> {
+  for (;;) {
+    const options = [pickerLabel('bash'), pickerLabel('external')];
+    const choice = await ctx.ui.select(`${statusMessage()}\nToggle which guard?`, options);
+    if (!choice) return;
+
+    if (choice.startsWith('bash')) {
+      setBashEnabled(!isBashEnabled());
+      ctx.ui.notify(`pi-gate: bash guard ${isBashEnabled() ? 'ON' : 'OFF'} (session)`, 'info');
+    } else if (choice.startsWith('external')) {
+      setExternalEnabled(!isExternalEnabled());
+      ctx.ui.notify(`pi-gate: external guard ${isExternalEnabled() ? 'ON' : 'OFF'} (session)`, 'info');
+    } else {
+      return;
+    }
+  }
+}
+
 /**
  * Entry point for the `/pi-gate` slash command: toggles the bash and
  * external-path guards independently for the current session.
  *
  * Usage:
- *   /pi-gate                  — interactive picker
+ *   /pi-gate                  — interactive picker (one entry per guard)
  *   /pi-gate status           — show current guard states
  *   /pi-gate bash on|off      — toggle the bash command-pattern guard
  *   /pi-gate external on|off  — toggle the external file-path guard
@@ -64,7 +93,7 @@ export async function runPiGateCommand(args: string, ctx: ExtensionCommandContex
     return;
   }
 
-  let toggle = parseToggle(tokens);
+  const toggle = parseToggle(tokens);
 
   if (!toggle && tokens.length > 0) {
     ctx.ui.notify(
@@ -75,10 +104,8 @@ export async function runPiGateCommand(args: string, ctx: ExtensionCommandContex
   }
 
   if (!toggle) {
-    const choice = await ctx.ui.select(`${statusMessage()}\nToggle which guard?`, [...TOGGLE_OPTIONS]);
-    if (!choice) return;
-    toggle = parseToggle(choice.split(/\s+/));
-    if (!toggle) return;
+    await runPicker(ctx);
+    return;
   }
 
   setSystemEnabled(toggle.system, toggle.enabled);
