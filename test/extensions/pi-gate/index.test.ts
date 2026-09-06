@@ -185,6 +185,43 @@ test('/pi-gate external off still gates bash command patterns', async () => {
   });
 });
 
+test('session_start with reason "new" re-enables both guards', async () => {
+  await withTempDir('pi-gate-', async (dir) => {
+    resetSessionState();
+    mkdirSync(join(dir, '.pi', 'extensions'), { recursive: true });
+    const harness = await createPiTestHarness(piGateExtension, dir);
+
+    await harness.command('pi-gate').execute('bash off');
+    await harness.command('pi-gate').execute('external off');
+    strictEqual(isBashEnabled(), false);
+    strictEqual(isExternalEnabled(), false);
+
+    await harness.emitEvent('session_start', { reason: 'new' }, {});
+
+    strictEqual(isBashEnabled(), true);
+    strictEqual(isExternalEnabled(), true);
+    resetSessionState();
+  });
+});
+
+test('session_start with other reasons does not re-enable guards', async () => {
+  await withTempDir('pi-gate-', async (dir) => {
+    resetSessionState();
+    mkdirSync(join(dir, '.pi', 'extensions'), { recursive: true });
+    const harness = await createPiTestHarness(piGateExtension, dir);
+
+    await harness.command('pi-gate').execute('bash off');
+    strictEqual(isBashEnabled(), false);
+
+    await harness.emitEvent('session_start', { reason: 'resume' }, {});
+    strictEqual(isBashEnabled(), false);
+
+    await harness.emitEvent('session_start', { reason: 'startup' }, {});
+    strictEqual(isBashEnabled(), false);
+    resetSessionState();
+  });
+});
+
 test('/pi-gate with no args applies the picker selection', async () => {
   await withTempDir('pi-gate-', async (dir) => {
     resetSessionState();

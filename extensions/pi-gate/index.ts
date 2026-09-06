@@ -3,7 +3,7 @@ import { loadConfig, type ConfigResult } from './config.ts';
 import { checkBashCommand } from './bash-guard.ts';
 import { checkFileAccess } from './file-access.ts';
 import { runPiGateCommand, piGateCompletions } from './command.ts';
-import { markPiGateLoaded } from './session.ts';
+import { markPiGateLoaded, setBashEnabled, setExternalEnabled } from './session.ts';
 
 /**
  * pi-gate extension: permissive-by-default file & bash access gate.
@@ -15,9 +15,19 @@ import { markPiGateLoaded } from './session.ts';
  *
  * Registers the `/pi-gate` command to toggle the bash and external-path
  * guards independently for the current session (both default to on).
+ * Starting a new session (`/new`) re-enables both guards.
  */
 export default function (pi: ExtensionAPI) {
   markPiGateLoaded();
+
+  // Session state survives in the process across `/new` (pi reloads the
+  // extension but globalThis persists), so explicitly re-enable both
+  // guards when the user starts a fresh session.
+  pi.on('session_start', async (event) => {
+    if (event.reason !== 'new') return;
+    setBashEnabled(true);
+    setExternalEnabled(true);
+  });
 
   pi.registerCommand('pi-gate', {
     description: 'Toggle pi-gate guards (usage: /pi-gate [bash|external] [on|off], or /pi-gate status)',
