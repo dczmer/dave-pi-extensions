@@ -8,31 +8,36 @@ export interface SessionState {
   bashEnabled: boolean;
   /** Whether the external file-path guard is active this session. */
   externalEnabled: boolean;
+  /** Whether the pi-gate extension entry point ran in this process. */
+  piGateLoaded: boolean;
 }
 
-const state: SessionState = {
-  approvedExternalPatterns: new Set(),
-  approvedBashPatterns: new Set(),
-  bashEnabled: true,
-  externalEnabled: true,
-};
+const SHARED_KEY = Symbol.for('pi-gate:session-state');
 
 /**
- * Retrieve the mutable session-state singleton.  Modifications are reflected
- * in all subsequent lookups during the current pi process.
+ * Retrieve the mutable session-state singleton, shared across all module
+ * copies in this process via globalThis (pi loads each extension with a
+ * separate jiti instance, so module-level state would NOT be shared).
  */
 export function getSessionState(): SessionState {
-  return state;
+  const g = globalThis as Record<symbol, SessionState | undefined>;
+  return (g[SHARED_KEY] ??= {
+    approvedExternalPatterns: new Set(),
+    approvedBashPatterns: new Set(),
+    bashEnabled: true,
+    externalEnabled: true,
+    piGateLoaded: false,
+  });
 }
 
 /** Mark an external path pattern as approved for the current session. */
 export function approveExternalPattern(pattern: string): void {
-  state.approvedExternalPatterns.add(pattern);
+  getSessionState().approvedExternalPatterns.add(pattern);
 }
 
 /** Mark a bash glob pattern as approved for the current session. */
 export function approveBashPattern(pattern: string): void {
-  state.approvedBashPatterns.add(pattern);
+  getSessionState().approvedBashPatterns.add(pattern);
 }
 
 /**
@@ -41,12 +46,12 @@ export function approveBashPattern(pattern: string): void {
  * file paths inside commands are still checked by the external-path guard.
  */
 export function isBashEnabled(): boolean {
-  return state.bashEnabled;
+  return getSessionState().bashEnabled;
 }
 
 /** Enable or disable the bash command-pattern guard for this session. */
 export function setBashEnabled(enabled: boolean): void {
-  state.bashEnabled = enabled;
+  getSessionState().bashEnabled = enabled;
 }
 
 /**
@@ -55,12 +60,27 @@ export function setBashEnabled(enabled: boolean): void {
  * referenced inside bash commands.
  */
 export function isExternalEnabled(): boolean {
-  return state.externalEnabled;
+  return getSessionState().externalEnabled;
 }
 
 /** Enable or disable the external file-path guard for this session. */
 export function setExternalEnabled(enabled: boolean): void {
-  state.externalEnabled = enabled;
+  getSessionState().externalEnabled = enabled;
+}
+
+/** Mark pi-gate as loaded in this process (called once by the extension entry point). */
+export function markPiGateLoaded(): void {
+  getSessionState().piGateLoaded = true;
+}
+
+/** Whether the pi-gate extension was actually loaded this session. */
+export function isPiGateLoaded(): boolean {
+  return getSessionState().piGateLoaded;
+}
+
+/** Reset the loaded flag (primarily for testing). */
+export function resetPiGateLoaded(): void {
+  getSessionState().piGateLoaded = false;
 }
 
 /**
@@ -75,7 +95,7 @@ export function setExternalEnabled(enabled: boolean): void {
  * excepted).
  */
 export function isExternalApproved(path: string): boolean {
-  for (const rawEntry of state.approvedExternalPatterns) {
+  for (const rawEntry of getSessionState().approvedExternalPatterns) {
     const entry = rawEntry.length > 1 ? rawEntry.replace(/\/+$/, '') : rawEntry;
     if (entry === path) return true;
     if (path.startsWith(entry + '/')) return true;
@@ -88,7 +108,7 @@ export function isExternalApproved(path: string): boolean {
  * Check whether a bash command matches any session-approved glob pattern.
  */
 export function isBashPatternApproved(command: string): boolean {
-  for (const pattern of state.approvedBashPatterns) {
+  for (const pattern of getSessionState().approvedBashPatterns) {
     if (matchesGlob(command, pattern)) return true;
   }
   return false;
@@ -96,6 +116,7 @@ export function isBashPatternApproved(command: string): boolean {
 
 /** Clear all in-memory session approvals and restore both guards (primarily for testing). */
 export function resetSessionState(): void {
+  const state = getSessionState();
   state.approvedExternalPatterns.clear();
   state.approvedBashPatterns.clear();
   state.bashEnabled = true;

@@ -6,8 +6,9 @@
  * go on the right before the model info.
  */
 
-import type { ExtensionAPI, ExtensionContext } from '@mariozechner/pi-coding-agent';
+import type { ExtensionAPI, ExtensionContext, Theme } from '@mariozechner/pi-coding-agent';
 import { truncateToWidth, visibleWidth } from '@mariozechner/pi-tui';
+import { isBashEnabled, isExternalEnabled, isPiGateLoaded } from './pi-gate/session.ts';
 
 // Progress bar characters (8 steps for smooth bar)
 const BAR_CHARS = ['░', '▏', '▎', '▍', '▌', '▋', '▊', '▉', '█'] as const;
@@ -46,12 +47,25 @@ export function formatTokens(n: number): string {
   return `${(n / 1000000).toFixed(1)}M`;
 }
 
-function installFooter(ctx: ExtensionContext) {
+/**
+ * Render one pi-gate indicator cell: `| ● X ` with the circle colored by
+ * guard state (`success` when enabled, `error` when disabled) and the
+ * separator in the theme's `border` color.
+ */
+export function renderGateIndicator(label: 'B' | 'E', enabled: boolean, theme: Theme): string {
+  const circle = theme.fg(enabled ? 'success' : 'error', '●');
+  return `${theme.fg('border', '|')} ${circle} ${label} `;
+}
+
+function installFooter(ctx: ExtensionContext, pi: ExtensionAPI) {
   ctx.ui.setFooter((tui, theme, footerData) => {
     footerData.onBranchChange(() => tui.requestRender());
+    const unsub = pi.events.on('pi-gate:toggled', () => tui.requestRender());
 
     return {
-      dispose() {},
+      dispose() {
+        unsub();
+      },
       invalidate() {},
       render(width: number): string[] {
         const usage = ctx.getContextUsage();
@@ -59,7 +73,7 @@ function installFooter(ctx: ExtensionContext) {
 
         const otherStatuses = [...footerData.getExtensionStatuses().values()];
 
-        // --- Left side: context bar ---
+        // --- Left side: gate indicators + context bar ---
         let contextSection = '';
         if (usage && model?.contextWindow) {
           const used = usage.tokens ?? 0;
@@ -73,6 +87,15 @@ function installFooter(ctx: ExtensionContext) {
             'muted',
             `(${formatTokens(used)}/${formatTokens(max)})`,
           )}`;
+        }
+
+        // Prepend pi-gate guard indicators whenever the pi-gate extension is loaded.
+        if (isPiGateLoaded()) {
+          const gateSection =
+            renderGateIndicator('B', isBashEnabled(), theme) +
+            renderGateIndicator('E', isExternalEnabled(), theme) +
+            theme.fg('border', '|');
+          contextSection = `${gateSection} ${contextSection}`;
         }
 
         // --- Right side: other extension statuses + model info ---
@@ -103,7 +126,7 @@ export default function (pi: ExtensionAPI) {
     handler: async (_args, ctx) => {
       enabled = !enabled;
       if (enabled) {
-        installFooter(ctx);
+        installFooter(ctx, pi);
         ctx.ui.notify('Context usage bar enabled', 'info');
       } else {
         ctx.ui.setFooter(undefined);
@@ -115,7 +138,7 @@ export default function (pi: ExtensionAPI) {
   // Auto-enable on session start
   pi.on('session_start', async (_event, ctx) => {
     if (enabled) {
-      installFooter(ctx);
+      installFooter(ctx, pi);
     }
   });
 

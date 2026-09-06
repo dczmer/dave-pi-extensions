@@ -1,4 +1,4 @@
-import type { ExtensionCommandContext } from '@mariozechner/pi-coding-agent';
+import type { EventBus, ExtensionCommandContext } from '@mariozechner/pi-coding-agent';
 import { getSessionState, isBashEnabled, setBashEnabled, isExternalEnabled, setExternalEnabled } from './session.ts';
 
 /** Toggleable pi-gate guard systems. */
@@ -6,12 +6,13 @@ export type GuardSystem = 'bash' | 'external';
 
 const TOGGLE_OPTIONS = ['bash on', 'bash off', 'external on', 'external off'] as const;
 
-function setSystemEnabled(system: GuardSystem, enabled: boolean): void {
+function setSystemEnabled(system: GuardSystem, enabled: boolean, events: EventBus): void {
   if (system === 'bash') {
     setBashEnabled(enabled);
   } else {
     setExternalEnabled(enabled);
   }
+  events.emit('pi-gate:toggled', { system, enabled });
 }
 
 /** Human-readable summary of both guard states plus session approval counts. */
@@ -54,17 +55,17 @@ function pickerLabel(system: GuardSystem): string {
  * flips that guard and re-shows the picker with refreshed labels; the
  * user exits by cancelling the picker.
  */
-async function runPicker(ctx: ExtensionCommandContext): Promise<void> {
+async function runPicker(ctx: ExtensionCommandContext, events: EventBus): Promise<void> {
   for (;;) {
     const options = [pickerLabel('bash'), pickerLabel('external')];
     const choice = await ctx.ui.select(`${statusMessage()}\nToggle which guard?`, options);
     if (!choice) return;
 
     if (choice.startsWith('bash')) {
-      setBashEnabled(!isBashEnabled());
+      setSystemEnabled('bash', !isBashEnabled(), events);
       ctx.ui.notify(`pi-gate: bash guard ${isBashEnabled() ? 'ON' : 'OFF'} (session)`, 'info');
     } else if (choice.startsWith('external')) {
-      setExternalEnabled(!isExternalEnabled());
+      setSystemEnabled('external', !isExternalEnabled(), events);
       ctx.ui.notify(`pi-gate: external guard ${isExternalEnabled() ? 'ON' : 'OFF'} (session)`, 'info');
     } else {
       return;
@@ -84,8 +85,9 @@ async function runPicker(ctx: ExtensionCommandContext): Promise<void> {
  *
  * @param args - Raw argument string passed after `/pi-gate`.
  * @param ctx - Pi extension command context providing UI primitives.
+ * @param events - Shared event bus used to emit `pi-gate:toggled` on guard changes.
  */
-export async function runPiGateCommand(args: string, ctx: ExtensionCommandContext): Promise<void> {
+export async function runPiGateCommand(args: string, ctx: ExtensionCommandContext, events: EventBus): Promise<void> {
   const tokens = args.trim().split(/\s+/).filter(Boolean);
 
   if (tokens[0] === 'status') {
@@ -104,10 +106,10 @@ export async function runPiGateCommand(args: string, ctx: ExtensionCommandContex
   }
 
   if (!toggle) {
-    await runPicker(ctx);
+    await runPicker(ctx, events);
     return;
   }
 
-  setSystemEnabled(toggle.system, toggle.enabled);
+  setSystemEnabled(toggle.system, toggle.enabled, events);
   ctx.ui.notify(`pi-gate: ${toggle.system} guard ${toggle.enabled ? 'ON' : 'OFF'} (session)`, 'info');
 }

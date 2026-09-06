@@ -11,6 +11,9 @@ import {
   setBashEnabled,
   isExternalEnabled,
   setExternalEnabled,
+  markPiGateLoaded,
+  isPiGateLoaded,
+  resetPiGateLoaded,
 } from '../../../extensions/pi-gate/session.ts';
 
 test('approve and check external path (exact match)', () => {
@@ -144,4 +147,37 @@ test('resetSessionState restores both guards to enabled', () => {
   resetSessionState();
   strictEqual(isBashEnabled(), true);
   strictEqual(isExternalEnabled(), true);
+});
+
+test('piGateLoaded defaults to false in a fresh process', () => {
+  resetPiGateLoaded();
+  strictEqual(isPiGateLoaded(), false);
+});
+
+test('markPiGateLoaded sets the loaded flag', () => {
+  resetPiGateLoaded();
+  markPiGateLoaded();
+  strictEqual(isPiGateLoaded(), true);
+  resetPiGateLoaded();
+});
+
+test('resetPiGateLoaded clears the loaded flag', () => {
+  markPiGateLoaded();
+  strictEqual(isPiGateLoaded(), true);
+  resetPiGateLoaded();
+  strictEqual(isPiGateLoaded(), false);
+});
+
+test('resetSessionState does not clear the loaded flag', () => {
+  markPiGateLoaded();
+  resetSessionState();
+  strictEqual(isPiGateLoaded(), true);
+  resetPiGateLoaded();
+});
+
+test('session state singleton is shared via globalThis across getSessionState calls', () => {
+  resetSessionState();
+  getSessionState().approvedBashPatterns.add('shared-*');
+  strictEqual(isBashPatternApproved('shared-anything'), true);
+  resetSessionState();
 });

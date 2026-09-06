@@ -3,6 +3,7 @@ import { loadConfig, type ConfigResult } from './config.ts';
 import { checkBashCommand } from './bash-guard.ts';
 import { checkFileAccess } from './file-access.ts';
 import { runPiGateCommand, piGateCompletions } from './command.ts';
+import { markPiGateLoaded } from './session.ts';
 
 /**
  * pi-gate extension: permissive-by-default file & bash access gate.
@@ -16,10 +17,12 @@ import { runPiGateCommand, piGateCompletions } from './command.ts';
  * guards independently for the current session (both default to on).
  */
 export default function (pi: ExtensionAPI) {
+  markPiGateLoaded();
+
   pi.registerCommand('pi-gate', {
     description: 'Toggle pi-gate guards (usage: /pi-gate [bash|external] [on|off], or /pi-gate status)',
     getArgumentCompletions: (prefix) => piGateCompletions(prefix),
-    handler: async (args, ctx) => runPiGateCommand(args, ctx),
+    handler: async (args, ctx) => runPiGateCommand(args, ctx, pi.events),
   });
 
   pi.on('tool_call', async (event, ctx) => {

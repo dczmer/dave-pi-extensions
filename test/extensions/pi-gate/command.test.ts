@@ -1,5 +1,6 @@
-import { strictEqual, ok } from 'node:assert';
+import { strictEqual, ok, deepStrictEqual } from 'node:assert';
 import { test, mock } from 'node:test';
+import type { EventBus } from '@mariozechner/pi-coding-agent';
 import { runPiGateCommand, piGateCompletions, statusMessage } from '../../../extensions/pi-gate/command.ts';
 import {
   resetSessionState,
@@ -22,18 +23,28 @@ function createNotifySpy() {
   return { notify, calls };
 }
 
+/** Minimal EventBus stub: records emits, ignores subscriptions. */
+function createEventBusStub() {
+  const emit = mock.fn();
+  const on = mock.fn(() => () => {});
+  return { bus: { emit, on } as unknown as EventBus, emit, on };
+}
+
 test('bash off disables the bash guard and notifies', async () => {
   resetSessionState();
   const { notify, calls } = createNotifySpy();
   const ctx = createCommandContext({ ui: createUIContext({ notify }) });
+  const { bus, emit } = createEventBusStub();
 
-  await runPiGateCommand('bash off', ctx);
+  await runPiGateCommand('bash off', ctx, bus);
 
   strictEqual(isBashEnabled(), false);
   strictEqual(isExternalEnabled(), true); // independent
   strictEqual(calls.length, 1);
   strictEqual(calls[0]!.message, 'pi-gate: bash guard OFF (session)');
   strictEqual(calls[0]!.type, 'info');
+  strictEqual(emit.mock.calls.length, 1);
+  deepStrictEqual(emit.mock.calls[0]!.arguments, ['pi-gate:toggled', { system: 'bash', enabled: false }]);
   resetSessionState();
 });
 
@@ -42,7 +53,7 @@ test('external off disables the external guard and notifies', async () => {
   const { notify, calls } = createNotifySpy();
   const ctx = createCommandContext({ ui: createUIContext({ notify }) });
 
-  await runPiGateCommand('external off', ctx);
+  await runPiGateCommand('external off', ctx, createEventBusStub().bus);
 
   strictEqual(isExternalEnabled(), false);
   strictEqual(isBashEnabled(), true); // independent
@@ -54,11 +65,25 @@ test('arguments are case-insensitive', async () => {
   resetSessionState();
   const ctx = createCommandContext({ ui: createUIContext() });
 
-  await runPiGateCommand('BASH OFF', ctx);
+  await runPiGateCommand('BASH OFF', ctx, createEventBusStub().bus);
   strictEqual(isBashEnabled(), false);
 
-  await runPiGateCommand('bash ON', ctx);
+  await runPiGateCommand('bash ON', ctx, createEventBusStub().bus);
   strictEqual(isBashEnabled(), true);
+  resetSessionState();
+});
+
+test('bash on emits a toggle event with enabled true', async () => {
+  resetSessionState();
+  setBashEnabled(false);
+  const ctx = createCommandContext({ ui: createUIContext() });
+  const { bus, emit } = createEventBusStub();
+
+  await runPiGateCommand('bash on', ctx, bus);
+
+  strictEqual(isBashEnabled(), true);
+  strictEqual(emit.mock.calls.length, 1);
+  deepStrictEqual(emit.mock.calls[0]!.arguments, ['pi-gate:toggled', { system: 'bash', enabled: true }]);
   resetSessionState();
 });
 
@@ -69,7 +94,7 @@ test('status notifies with both guard states and approval counts', async () => {
   const { notify, calls } = createNotifySpy();
   const ctx = createCommandContext({ ui: createUIContext({ notify }) });
 
-  await runPiGateCommand('status', ctx);
+  await runPiGateCommand('status', ctx, createEventBusStub().bus);
 
   strictEqual(calls.length, 1);
   ok(calls[0]!.message.includes('bash guard ON'));
@@ -97,7 +122,7 @@ test('unknown usage warns and leaves state unchanged', async () => {
   const { notify, calls } = createNotifySpy();
   const ctx = createCommandContext({ ui: createUIContext({ notify }) });
 
-  await runPiGateCommand('frobnicate on', ctx);
+  await runPiGateCommand('frobnicate on', ctx, createEventBusStub().bus);
 
   strictEqual(isBashEnabled(), true);
   strictEqual(isExternalEnabled(), true);
@@ -112,7 +137,7 @@ test('partial usage warns and leaves state unchanged', async () => {
   const { notify, calls } = createNotifySpy();
   const ctx = createCommandContext({ ui: createUIContext({ notify }) });
 
-  await runPiGateCommand('bash', ctx);
+  await runPiGateCommand('bash', ctx, createEventBusStub().bus);
 
   strictEqual(isBashEnabled(), true);
   strictEqual(calls[0]!.type, 'warning');
@@ -130,8 +155,9 @@ test('no args opens the picker with one state-labelled entry per guard', async (
   });
   const { notify, calls } = createNotifySpy();
   const ctx = createCommandContext({ ui: createUIContext({ select, notify }) });
+  const { bus, emit } = createEventBusStub();
 
-  await runPiGateCommand('', ctx);
+  await runPiGateCommand('', ctx, bus);
 
   // Two entries labelled with current state; selecting flips and re-shows.
   strictEqual(seenOptions.length, 2);
@@ -141,6 +167,8 @@ test('no args opens the picker with one state-labelled entry per guard', async (
   strictEqual(isBashEnabled(), false);
   strictEqual(isExternalEnabled(), true);
   strictEqual(calls[0]!.message, 'pi-gate: bash guard OFF (session)');
+  strictEqual(emit.mock.calls.length, 1);
+  deepStrictEqual(emit.mock.calls[0]!.arguments, ['pi-gate:toggled', { system: 'bash', enabled: false }]);
   resetSessionState();
 });
 
@@ -154,7 +182,7 @@ test('picker toggles external guard when its entry is selected', async () => {
   const { notify, calls } = createNotifySpy();
   const ctx = createCommandContext({ ui: createUIContext({ select, notify }) });
 
-  await runPiGateCommand('', ctx);
+  await runPiGateCommand('', ctx, createEventBusStub().bus);
 
   strictEqual(isExternalEnabled(), false);
   strictEqual(isBashEnabled(), true);
@@ -167,7 +195,7 @@ test('picker cancellation leaves state unchanged', async () => {
   const select = mock.fn(async () => undefined);
   const ctx = createCommandContext({ ui: createUIContext({ select }) });
 
-  await runPiGateCommand('', ctx);
+  await runPiGateCommand('', ctx, createEventBusStub().bus);
 
   strictEqual(select.mock.calls.length, 1);
   strictEqual(isBashEnabled(), true);
