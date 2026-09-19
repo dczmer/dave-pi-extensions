@@ -91,6 +91,18 @@ If you approve a command, path, or pattern, it will be honored for the rest of t
 
 Example: If you approve the pattern `*` for a bash prompt and do not save it to a config file, it will allow all bash commands to run without prompting for the rest of the session.
 
+### Toggling guards
+
+Both guards are active by default and can be flipped independently for the
+current session:
+
+- `/pi-gate-bash` — toggle the bash command-pattern guard.
+- `/pi-gate-external` — toggle the external file-path guard.
+
+Each command flips its guard and reports the new state. Disabling a guard
+skips its prompts for the rest of the session; running the command again
+re-enables it. Starting a new session (`/new`) re-enables both guards.
+
 ## Configuration
 
 I have split the configuration into global and project level settings files. Since we only have a very simple opt-in pattern, we don't have to implement any kind of override logic. We don't even care about order or which file takes precedence. The lists are simply joined together into an effective working white-list.

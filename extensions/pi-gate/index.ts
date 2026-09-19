@@ -2,7 +2,7 @@ import type { ExtensionAPI } from '@mariozechner/pi-coding-agent';
 import { loadConfig, type ConfigResult } from './config.ts';
 import { checkBashCommand } from './bash-guard.ts';
 import { checkFileAccess } from './file-access.ts';
-import { runPiGateCommand, piGateCompletions } from './command.ts';
+import { runPiGateBashCommand, runPiGateExternalCommand } from './command.ts';
 import { markPiGateLoaded, setBashEnabled, setExternalEnabled } from './session.ts';
 
 /**
@@ -13,9 +13,9 @@ import { markPiGateLoaded, setBashEnabled, setExternalEnabled } from './session.
  * by default; external paths and new bash
  * commands require explicit user approval during the session.
  *
- * Registers the `/pi-gate` command to toggle the bash and external-path
- * guards independently for the current session (both default to on).
- * Starting a new session (`/new`) re-enables both guards.
+ * Registers `/pi-gate-bash` and `/pi-gate-external` to toggle the bash and
+ * external-path guards independently for the current session (both default
+ * to on). Starting a new session (`/new`) re-enables both guards.
  */
 export default function (pi: ExtensionAPI) {
   markPiGateLoaded();
@@ -29,10 +29,14 @@ export default function (pi: ExtensionAPI) {
     setExternalEnabled(true);
   });
 
-  pi.registerCommand('pi-gate', {
-    description: 'Toggle pi-gate guards (usage: /pi-gate [bash|external] [on|off], or /pi-gate status)',
-    getArgumentCompletions: (prefix) => piGateCompletions(prefix),
-    handler: async (args, ctx) => runPiGateCommand(args, ctx, pi.events),
+  pi.registerCommand('pi-gate-bash', {
+    description: 'Toggle the pi-gate bash command-pattern guard for this session',
+    handler: async (args, ctx) => runPiGateBashCommand(args, ctx, pi.events),
+  });
+
+  pi.registerCommand('pi-gate-external', {
+    description: 'Toggle the pi-gate external file-path guard for this session',
+    handler: async (args, ctx) => runPiGateExternalCommand(args, ctx, pi.events),
   });
 
   pi.on('tool_call', async (event, ctx) => {

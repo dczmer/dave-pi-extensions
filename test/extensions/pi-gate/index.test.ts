@@ -88,22 +88,24 @@ test('allowed command does not emit harness:block', async () => {
   });
 });
 
-test('registers the /pi-gate command', async () => {
+test('registers the /pi-gate-bash and /pi-gate-external commands', async () => {
   await withTempDir('pi-gate-', async (dir) => {
     mkdirSync(join(dir, '.pi', 'extensions'), { recursive: true });
     const harness = await createPiTestHarness(piGateExtension, dir);
 
-    ok(harness.listRegisteredCommands().includes('pi-gate'));
+    const commands = harness.listRegisteredCommands();
+    ok(commands.includes('pi-gate-bash'));
+    ok(commands.includes('pi-gate-external'));
   });
 });
 
-test('/pi-gate bash off allows unknown bash commands without prompting', async () => {
+test('/pi-gate-bash allows unknown bash commands without prompting', async () => {
   await withTempDir('pi-gate-', async (dir) => {
     resetSessionState();
     mkdirSync(join(dir, '.pi', 'extensions'), { recursive: true });
     const harness = await createPiTestHarness(piGateExtension, dir);
 
-    await harness.command('pi-gate').execute('bash off');
+    await harness.command('pi-gate-bash').execute('');
     strictEqual(isBashEnabled(), false);
 
     const emitted = captureEvents(harness, 'harness:block');
@@ -119,13 +121,13 @@ test('/pi-gate bash off allows unknown bash commands without prompting', async (
   });
 });
 
-test('/pi-gate bash off still gates external paths in file tools', async () => {
+test('/pi-gate-bash still gates external paths in file tools', async () => {
   await withTempDir('pi-gate-', async (dir) => {
     resetSessionState();
     mkdirSync(join(dir, '.pi', 'extensions'), { recursive: true });
     const harness = await createPiTestHarness(piGateExtension, dir);
 
-    await harness.command('pi-gate').execute('bash off');
+    await harness.command('pi-gate-bash').execute('');
 
     const emitted = captureEvents(harness, 'harness:block');
     const { results } = await harness.emitEvent(
@@ -141,13 +143,13 @@ test('/pi-gate bash off still gates external paths in file tools', async () => {
   });
 });
 
-test('/pi-gate external off allows external file access without prompting', async () => {
+test('/pi-gate-external off allows external file access without prompting', async () => {
   await withTempDir('pi-gate-', async (dir) => {
     resetSessionState();
     mkdirSync(join(dir, '.pi', 'extensions'), { recursive: true });
     const harness = await createPiTestHarness(piGateExtension, dir);
 
-    await harness.command('pi-gate').execute('external off');
+    await harness.command('pi-gate-external').execute('');
     strictEqual(isExternalEnabled(), false);
 
     const emitted = captureEvents(harness, 'harness:block');
@@ -163,13 +165,13 @@ test('/pi-gate external off allows external file access without prompting', asyn
   });
 });
 
-test('/pi-gate external off still gates bash command patterns', async () => {
+test('/pi-gate-external still gates bash command patterns', async () => {
   await withTempDir('pi-gate-', async (dir) => {
     resetSessionState();
     mkdirSync(join(dir, '.pi', 'extensions'), { recursive: true });
     const harness = await createPiTestHarness(piGateExtension, dir);
 
-    await harness.command('pi-gate').execute('external off');
+    await harness.command('pi-gate-external').execute('');
 
     const emitted = captureEvents(harness, 'harness:block');
     const { results } = await harness.emitEvent(
@@ -191,8 +193,8 @@ test('session_start with reason "new" re-enables both guards', async () => {
     mkdirSync(join(dir, '.pi', 'extensions'), { recursive: true });
     const harness = await createPiTestHarness(piGateExtension, dir);
 
-    await harness.command('pi-gate').execute('bash off');
-    await harness.command('pi-gate').execute('external off');
+    await harness.command('pi-gate-bash').execute('');
+    await harness.command('pi-gate-external').execute('');
     strictEqual(isBashEnabled(), false);
     strictEqual(isExternalEnabled(), false);
 
@@ -210,7 +212,7 @@ test('session_start with other reasons does not re-enable guards', async () => {
     mkdirSync(join(dir, '.pi', 'extensions'), { recursive: true });
     const harness = await createPiTestHarness(piGateExtension, dir);
 
-    await harness.command('pi-gate').execute('bash off');
+    await harness.command('pi-gate-bash').execute('');
     strictEqual(isBashEnabled(), false);
 
     await harness.emitEvent('session_start', { reason: 'resume' }, {});
@@ -222,22 +224,34 @@ test('session_start with other reasons does not re-enable guards', async () => {
   });
 });
 
-test('/pi-gate with no args applies the picker selection', async () => {
+test('/pi-gate-bash toggles the bash guard through the registered command', async () => {
   await withTempDir('pi-gate-', async (dir) => {
     resetSessionState();
     mkdirSync(join(dir, '.pi', 'extensions'), { recursive: true });
     const harness = await createPiTestHarness(piGateExtension, dir);
 
-    let call = 0;
-    const select = mock.fn(async () => {
-      call += 1;
-      return call === 1 ? 'external (ON)' : undefined; // toggle, then cancel
-    });
-    await harness.command('pi-gate').execute('', { ui: createUIContext({ select }) });
+    await harness.command('pi-gate-bash').execute('');
+    strictEqual(isBashEnabled(), false);
+    strictEqual(isExternalEnabled(), true);
 
-    strictEqual(select.mock.calls.length, 2); // toggle, then cancel exits
+    await harness.command('pi-gate-bash').execute('');
+    strictEqual(isBashEnabled(), true);
+    resetSessionState();
+  });
+});
+
+test('/pi-gate-external toggles the external guard through the registered command', async () => {
+  await withTempDir('pi-gate-', async (dir) => {
+    resetSessionState();
+    mkdirSync(join(dir, '.pi', 'extensions'), { recursive: true });
+    const harness = await createPiTestHarness(piGateExtension, dir);
+
+    await harness.command('pi-gate-external').execute('');
     strictEqual(isExternalEnabled(), false);
     strictEqual(isBashEnabled(), true);
+
+    await harness.command('pi-gate-external').execute('');
+    strictEqual(isExternalEnabled(), true);
     resetSessionState();
   });
 });
