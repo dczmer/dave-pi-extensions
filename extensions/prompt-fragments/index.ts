@@ -1,5 +1,4 @@
 import type { ExtensionAPI, ExtensionContext } from '@mariozechner/pi-coding-agent';
-import { Key } from '@mariozechner/pi-tui';
 import { fragmentsPath, loadFragments } from './fragments.ts';
 import { composePrompt, type FragmentMode } from './compose.ts';
 import { pickFragments } from './picker.ts';
@@ -40,24 +39,16 @@ async function runFragmentPicker(mode: FragmentMode, ctx: ExtensionContext): Pro
 /**
  * prompt-fragments extension: prepend/append reusable prompt fragments
  * from ~/.pi/agent/prompt-fragments.json to the editor via a multi-select
- * picker.
+ * picker, driven by the /fragments-prepend and /fragments-append commands.
  */
 export default function (pi: ExtensionAPI) {
-  pi.registerShortcut(Key.ctrlAlt('a'), {
-    description: 'Append prompt fragment(s) to the editor',
-    handler: async (ctx) => runFragmentPicker('append', ctx),
+  // Commands work with custom editors and are discoverable via /help.
+  pi.registerCommand('fragments-prepend', {
+    description: 'Pick prompt fragments to prepend to the editor',
+    handler: async (_args, ctx) => runFragmentPicker('prepend', ctx),
   });
-  pi.registerShortcut(Key.ctrlAlt('b'), {
-    description: 'Prepend prompt fragment(s) to the editor',
-    handler: async (ctx) => runFragmentPicker('prepend', ctx),
-  });
-
-  // Command fallback: works with custom editors and is discoverable via /help.
-  pi.registerCommand('fragment', {
-    description: 'Pick prompt fragments to prepend/append (usage: /fragment [a|p])',
-    handler: async (args, ctx) => {
-      const mode = args.trim() === 'p' ? 'prepend' : 'append';
-      await runFragmentPicker(mode, ctx);
-    },
+  pi.registerCommand('fragments-append', {
+    description: 'Pick prompt fragments to append to the editor',
+    handler: async (_args, ctx) => runFragmentPicker('append', ctx),
   });
 }
