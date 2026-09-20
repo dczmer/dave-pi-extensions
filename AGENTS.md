@@ -9,10 +9,12 @@ Pi package bundling extensions, themes, prompts for pi coding agent.
 - **Nix**: Flake-based devShell in `flake.nix`
 - **Node.js**: Runtime and test runner for all code
 - **Runtime / Peer Dependencies**:
-  - `@mariozechner/pi` — Pi SDK peer dependency
-  - `@mariozechner/pi-coding-agent` — Pi coding agent peer dependency
+  - `@earendil-works/pi-coding-agent` — Pi coding agent peer dependency
+  - `@earendil-works/pi-ai` — Pi AI SDK types peer dependency
+  - `@earendil-works/pi-tui` — Pi TUI components peer dependency
   - `bash-parser` — Runtime dependency for accurate parsing of complex bash command strings
 - **Dev Dependencies**:
+  - `@earendil-works/pi-coding-agent`, `@earendil-works/pi-ai`, `@earendil-works/pi-tui` — pinned to the installed pi runtime version (`0.85.1`) for typechecking and tests
   - `@types/node` — Node.js types
   - `typescript` — TypeScript compiler
   - `@eslint/js`, `eslint`, `prettier`, `typescript-eslint`, `typescript-language-server` — Linting and formatting

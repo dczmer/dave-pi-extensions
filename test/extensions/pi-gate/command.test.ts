@@ -1,6 +1,6 @@
 import { strictEqual, ok, deepStrictEqual } from 'node:assert';
 import { test, mock } from 'node:test';
-import type { EventBus } from '@mariozechner/pi-coding-agent';
+import type { EventBus } from '@earendil-works/pi-coding-agent';
 import { runPiGateBashCommand, runPiGateExternalCommand } from '../../../extensions/pi-gate/command.ts';
 import {
   resetSessionState,

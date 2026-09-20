@@ -1,4 +1,5 @@
 import { matchesGlob } from './matcher.ts';
+import type { ConfigResult } from './config.ts';
 
 /** Per-session approvals and guard toggles; everything expires when pi exits. */
 export interface SessionState {
@@ -13,6 +14,7 @@ export interface SessionState {
 }
 
 const SHARED_KEY = Symbol.for('pi-gate:session-state');
+const CONFIG_OVERRIDE_KEY = Symbol.for('pi-gate:config-override');
 
 /**
  * Retrieve the mutable session-state singleton, shared across all module
@@ -81,6 +83,21 @@ export function isPiGateLoaded(): boolean {
 /** Reset the loaded flag (primarily for testing). */
 export function resetPiGateLoaded(): void {
   getSessionState().piGateLoaded = false;
+}
+
+/**
+ * Override the config result the extension entry point uses for every tool
+ * call in this process. Only ever set by tests; production always leaves
+ * this unset and loads config from disk. Shared via globalThis so the
+ * override survives pi loading the extension with separate module copies.
+ */
+export function setConfigResultOverride(result: ConfigResult | undefined): void {
+  (globalThis as Record<symbol, ConfigResult | undefined>)[CONFIG_OVERRIDE_KEY] = result;
+}
+
+/** Config result registered by {@link setConfigResultOverride}, if any. */
+export function getConfigResultOverride(): ConfigResult | undefined {
+  return (globalThis as Record<symbol, ConfigResult | undefined>)[CONFIG_OVERRIDE_KEY];
 }
 
 /**

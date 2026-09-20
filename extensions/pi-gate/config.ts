@@ -6,6 +6,11 @@ import { homedir } from 'node:os';
 export interface PiGateConfig {
   bashAllow: string[];
   externalAllow: string[];
+  /**
+   * Global-only model reference ("provider/modelId") used to judge
+   * unparsable bash commands. Ignored when read from the project config.
+   */
+  commandVerificationModel?: string;
 }
 
 /** Result of loading and merging global + project configs. */
@@ -17,15 +22,24 @@ export interface ConfigResult {
   projectPath: string;
 }
 
-function isPiGateConfig(v: unknown): v is PiGateConfig {
-  if (typeof v !== 'object' || v === null) return false;
-  const keys: (keyof PiGateConfig)[] = ['bashAllow', 'externalAllow'];
-  for (const key of keys) {
-    if (!(key in v)) return false;
-    const arr = (v as Record<string, unknown>)[key];
-    if (!Array.isArray(arr) || !arr.every((x) => typeof x === 'string')) return false;
-  }
-  return true;
+/**
+ * Parse an unknown value into a `PiGateConfig`, normalizing tolerant
+ * defaults: absent `bashAllow` / `externalAllow` default to `[]` (so a
+ * minimal hand-edited config like `{ "commandVerificationModel": "p/m" }`
+ * loads), while a present-but-malformed field rejects the whole file.
+ */
+function parsePiGateConfig(v: unknown): PiGateConfig | null {
+  if (typeof v !== 'object' || v === null) return null;
+  const rec = v as Record<string, unknown>;
+  const bashAllow = rec.bashAllow ?? [];
+  const externalAllow = rec.externalAllow ?? [];
+  if (!Array.isArray(bashAllow) || !bashAllow.every((x) => typeof x === 'string')) return null;
+  if (!Array.isArray(externalAllow) || !externalAllow.every((x) => typeof x === 'string')) return null;
+  const model = rec.commandVerificationModel;
+  if (model !== undefined && typeof model !== 'string') return null;
+  const config: PiGateConfig = { bashAllow, externalAllow };
+  if (model !== undefined) config.commandVerificationModel = model;
+  return config;
 }
 
 const home = homedir() ?? '/';
@@ -72,11 +86,7 @@ function loadSingleConfig(configPath: string): PiGateConfig {
     throw new Error(`pi-gate: config must be an object in ${configPath}`);
   }
 
-  if (!isPiGateConfig(parsed)) {
-    return createEmptyConfig();
-  }
-
-  return parsed;
+  return parsePiGateConfig(parsed) ?? createEmptyConfig();
 }
 
 function mergeConfigs(global: PiGateConfig, project: PiGateConfig): PiGateConfig {
@@ -89,14 +99,16 @@ function mergeConfigs(global: PiGateConfig, project: PiGateConfig): PiGateConfig
 /**
  * Load global and project pi-gate configs, merge them, and return the
  * combined result.  Project config lives at `{cwd}/.pi/pi-gate.json`;
- * global config at `~/.pi/agent/pi-gate.json`.
+ * global config at `~/.pi/agent/pi-gate.json` unless `globalPathOverride`
+ * is given (used by tests to stay in temp directories).
  *
  * @param cwd - Project working directory used to locate the project config.
+ * @param globalPathOverride - Optional explicit global config path.
  * @returns Merged configuration along with the raw global and project configs
  *          and their filesystem paths.
  */
-export function loadConfig(cwd: string): ConfigResult {
-  const globalPath = DEFAULT_GLOBAL_CONFIG_PATH;
+export function loadConfig(cwd: string, globalPathOverride?: string): ConfigResult {
+  const globalPath = globalPathOverride ?? DEFAULT_GLOBAL_CONFIG_PATH;
   const projectPath = join(cwd, '.pi', 'pi-gate.json');
 
   const global = loadSingleConfig(globalPath);

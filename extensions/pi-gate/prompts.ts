@@ -1,3 +1,5 @@
+import type { ModelRegistry } from '@earendil-works/pi-coding-agent';
+
 export type ConfigSection = 'bashAllow' | 'externalAllow';
 export type ConfigTarget = 'project' | 'global';
 
@@ -13,7 +15,13 @@ export interface ExtensionContext {
     editor(title: string, prefill?: string): Promise<string | undefined>;
     select(title: string, options: string[]): Promise<string | undefined>;
     notify(message: string, type?: 'info' | 'warning' | 'error'): void;
+    /** Footer status line; `undefined` clears it. */
+    setStatus(key: string, text: string | undefined): void;
   };
+  /** Model catalogue, auth checks, and completion used to resolve/run the judge. */
+  modelRegistry: ModelRegistry;
+  /** Abort signal for the active turn, when available. */
+  signal?: AbortSignal | undefined;
 }
 
 /**

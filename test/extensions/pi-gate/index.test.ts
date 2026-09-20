@@ -2,11 +2,20 @@ import { strictEqual, ok } from 'node:assert';
 import { test, mock } from 'node:test';
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
+import type { Model } from '@earendil-works/pi-ai';
 import piGateExtension from '../../../extensions/pi-gate/index.ts';
 import { createPiTestHarness, captureEvents } from '../../utils/pi-harness.ts';
-import { createUIContext } from '../../utils/pi-context.ts';
+import { createUIContext, createAssistantMessage, createModelRegistryStub } from '../../utils/pi-context.ts';
 import { withTempDir } from '../../utils/temp-dir.ts';
-import { resetSessionState, isBashEnabled, isExternalEnabled } from '../../../extensions/pi-gate/session.ts';
+import {
+  resetSessionState,
+  isBashEnabled,
+  isExternalEnabled,
+  setConfigResultOverride,
+} from '../../../extensions/pi-gate/session.ts';
+import { createConfigResult } from './utils/config.ts';
+
+const fakeJudgeModel = { provider: 'p', id: 'm' } as unknown as Model<any>;
 
 test('blocks disallowed bash command and emits harness:block', async () => {
   await withTempDir('pi-gate-', async (dir) => {
@@ -85,6 +94,58 @@ test('allowed command does not emit harness:block', async () => {
 
     strictEqual(results[0], undefined);
     strictEqual(emitted.length, 0);
+  });
+});
+
+test('unparsable command: denied judge verdict logs a pi-gate-verdict entry and blocks', async () => {
+  await withTempDir('pi-gate-', async (dir) => {
+    resetSessionState();
+    mkdirSync(join(dir, '.pi'), { recursive: true });
+    // index.ts wires only hooks (no completer injection), so the judge uses
+    // ctx.modelRegistry.complete — provide a registry whose complete denies.
+    setConfigResultOverride(
+      createConfigResult({
+        global: { bashAllow: [], externalAllow: [], commandVerificationModel: 'p/m' },
+      }),
+    );
+    try {
+      const harness = await createPiTestHarness(piGateExtension, dir);
+      const emitted = captureEvents(harness, 'harness:block');
+
+      const { results } = await harness.emitEvent(
+        'tool_call',
+        { toolName: 'bash', input: { command: 'cat <<EOF\nx\nEOF' }, toolCallId: 'call-judge' },
+        {
+          modelRegistry: createModelRegistryStub({
+            models: [fakeJudgeModel],
+            complete: async () =>
+              createAssistantMessage('VERDICT: NO\nSUMMARY: heredoc write\nAFFECTED PATHS: none\nREASON: test'),
+          }),
+          ui: createUIContext({ confirm: mock.fn(async () => false) }),
+        },
+      );
+
+      const result = results[0] as { block: true; reason: string } | undefined;
+      strictEqual(result?.block, true);
+      strictEqual(emitted.length, 1);
+
+      strictEqual(harness.entries.length, 1);
+      const entry = harness.entries[0]!;
+      strictEqual(entry.customType, 'pi-gate-verdict');
+      const data = entry.data as {
+        text: string;
+        outcome: string;
+        command: string;
+        details: { summary: string };
+      };
+      strictEqual(data.text, 'pi-gate: Denied bash command.');
+      strictEqual(data.outcome, 'denied');
+      strictEqual(data.command, 'cat <<EOF\nx\nEOF');
+      strictEqual(data.details.summary, 'heredoc write');
+    } finally {
+      setConfigResultOverride(undefined);
+      resetSessionState();
+    }
   });
 });
 

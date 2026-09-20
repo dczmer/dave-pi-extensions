@@ -18,6 +18,8 @@ import { extractPathsFromCommand } from './guards.ts';
 import { checkFileAccess } from './file-access.ts';
 import { promptPattern, confirmAddToConfigWithTarget } from './prompts.ts';
 import type { ExtensionContext } from './prompts.ts';
+import { judgeBashCommand } from './judge.ts';
+import type { Completer, JudgeOutcome, JudgeVerdictDetails } from './judge.ts';
 
 // ---------------------------------------------------------------------------
 // Command parsing
@@ -133,6 +135,20 @@ function parseStatementEntries(command: string): StatementEntry[] | null {
 // Command checking
 // ---------------------------------------------------------------------------
 
+/** Transcript-logging hooks for judge outcomes. */
+export interface BashGuardHooks {
+  /** Called with each judge outcome that has a transcript message. */
+  onJudgeOutcome?(outcome: JudgeOutcome, details?: JudgeVerdictDetails): void;
+}
+
+/** Optional dependencies for {@link checkBashCommand}. */
+export interface BashGuardOptions {
+  /** Injected judge completer (tests). */
+  complete?: Completer;
+  /** Called with each judge outcome that has a transcript message. */
+  hooks?: BashGuardHooks;
+}
+
 async function checkSingleCommand(
   command: string,
   cwd: string,
@@ -194,6 +210,7 @@ async function checkSingleCommand(
  * @param cwd - Project working directory.
  * @param configResult - Loaded & merged pi-gate config.
  * @param ctx - Pi extension context providing UI and persistence helpers.
+ * @param options - Optional injected judge completer and logging hooks.
  * @returns `true` if all statements and their file references are allowed.
  */
 export async function checkBashCommand(
@@ -201,9 +218,17 @@ export async function checkBashCommand(
   cwd: string,
   configResult: ConfigResult,
   ctx: ExtensionContext,
+  options: BashGuardOptions = {},
 ): Promise<boolean> {
   const entries = parseStatementEntries(command);
   if (entries === null) {
+    const result = await judgeBashCommand(command, cwd, configResult, ctx, {
+      ...(options.complete ? { complete: options.complete } : {}),
+    });
+    if (result.outcome) options.hooks?.onJudgeOutcome?.(result.outcome, result.details);
+    if (result.decision === 'allow') return true;
+    if (result.decision === 'deny') return false;
+
     ctx.ui.notify('Command not parsable — manual approval required', 'warning');
     return ctx.ui.confirm('pi-gate: unparsable command', 'Could not parse command. Allow anyway?\n\n' + command);
   }

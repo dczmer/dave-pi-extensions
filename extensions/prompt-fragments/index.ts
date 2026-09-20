@@ -1,4 +1,4 @@
-import type { ExtensionAPI, ExtensionContext } from '@mariozechner/pi-coding-agent';
+import type { ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-agent';
 import { fragmentsPath, loadFragments } from './fragments.ts';
 import { composePrompt, type FragmentMode } from './compose.ts';
 import { pickFragments } from './picker.ts';

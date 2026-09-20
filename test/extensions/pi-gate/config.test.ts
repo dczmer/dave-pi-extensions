@@ -163,3 +163,89 @@ test('ConfigResult paths are correct', () => {
     strictEqual(result.globalPath, join(homedir(), '.pi', 'agent', 'pi-gate.json'));
   });
 });
+
+test('loadConfig preserves commandVerificationModel from the global config only', () => {
+  withTempDir('pi-gate-', (dir) => {
+    const globalPath = join(dir, 'global.json');
+    writeFileSync(globalPath, JSON.stringify({ commandVerificationModel: 'p/m' }));
+
+    const result = loadConfig(dir, globalPath);
+    strictEqual(result.global.commandVerificationModel, 'p/m');
+    // Never merged into the effective whitelist config.
+    strictEqual(result.merged.commandVerificationModel, undefined);
+  });
+});
+
+test('loadConfig parses commandVerificationModel from a project file but it stays project-scoped', () => {
+  withTempDir('pi-gate-', (dir) => {
+    const projectConfigDir = join(dir, '.pi');
+    mkdirSync(projectConfigDir, { recursive: true });
+    writeFileSync(
+      join(projectConfigDir, 'pi-gate.json'),
+      JSON.stringify({ bashAllow: [], externalAllow: [], commandVerificationModel: 'p/m' }),
+    );
+
+    const result = loadConfig(dir);
+    strictEqual(result.project.commandVerificationModel, 'p/m');
+    strictEqual(result.merged.commandVerificationModel, undefined);
+  });
+});
+
+test('saveConfig round-trip preserves commandVerificationModel', () => {
+  withTempDir('pi-gate-', (dir) => {
+    const globalPath = join(dir, 'global.json');
+    const original: PiGateConfig = {
+      bashAllow: ['cat *'],
+      externalAllow: ['/etc/*'],
+      commandVerificationModel: 'p/m',
+    };
+    saveConfig(original, globalPath);
+
+    const result = loadConfig(dir, globalPath);
+    strictEqual(result.global.commandVerificationModel, 'p/m');
+    deepStrictEqual(result.global.bashAllow, ['cat *']);
+  });
+});
+
+test('non-string commandVerificationModel falls back to an empty config', () => {
+  withTempDir('pi-gate-', (dir) => {
+    const globalPath = join(dir, 'global.json');
+    writeFileSync(globalPath, JSON.stringify({ commandVerificationModel: 42 }));
+
+    const result = loadConfig(dir, globalPath);
+    deepStrictEqual(result.global, { bashAllow: [], externalAllow: [] });
+  });
+});
+
+test('config with only commandVerificationModel loads with defaulted arrays', () => {
+  withTempDir('pi-gate-', (dir) => {
+    const globalPath = join(dir, 'global.json');
+    writeFileSync(globalPath, JSON.stringify({ commandVerificationModel: 'p/m' }));
+
+    const result = loadConfig(dir, globalPath);
+    deepStrictEqual(result.global.bashAllow, []);
+    deepStrictEqual(result.global.externalAllow, []);
+    strictEqual(result.global.commandVerificationModel, 'p/m');
+  });
+});
+
+test('config with only one allow array defaults the other to empty', () => {
+  withTempDir('pi-gate-', (dir) => {
+    const globalPath = join(dir, 'global.json');
+    writeFileSync(globalPath, JSON.stringify({ bashAllow: ['ls *'] }));
+
+    const result = loadConfig(dir, globalPath);
+    deepStrictEqual(result.global.bashAllow, ['ls *']);
+    deepStrictEqual(result.global.externalAllow, []);
+  });
+});
+
+test('present-but-malformed allow array still rejects the whole config', () => {
+  withTempDir('pi-gate-', (dir) => {
+    const globalPath = join(dir, 'global.json');
+    writeFileSync(globalPath, JSON.stringify({ bashAllow: [1, 2], commandVerificationModel: 'p/m' }));
+
+    const result = loadConfig(dir, globalPath);
+    deepStrictEqual(result.global, { bashAllow: [], externalAllow: [] });
+  });
+});

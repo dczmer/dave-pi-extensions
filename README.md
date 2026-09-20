@@ -32,6 +32,8 @@ I made my own, and I stripped it down to work the way I like, based on a simple 
 
 ![pi-gate-deny](./docs/images/pi-gate-deny.png)
 
+Commands that defeat the bash parser can be vetted by a configurable LLM "judge" (a global-only `commandVerificationModel` setting), with a manual-approval fallback when it is unset, errors, times out, or returns an ambiguous verdict.
+
 I do also run `pi` in a [Bubblewrap](https://github.com/containers/bubblewrap) sandbox.
 
 [Read more here](./docs/extensions/pi-gate.md).

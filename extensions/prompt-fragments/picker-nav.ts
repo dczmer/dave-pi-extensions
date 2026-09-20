@@ -3,7 +3,7 @@
  * classification, wrap-around index arithmetic, and the filter mirror.
  * Kept free of TUI/SelectList dependencies so it is unit-testable.
  */
-import type { SelectItem } from '@mariozechner/pi-tui';
+import type { SelectItem } from '@earendil-works/pi-tui';
 
 /** Picker modes: nav (default) or filter (entered via `/`). */
 export type PickerMode = 'nav' | 'filter';

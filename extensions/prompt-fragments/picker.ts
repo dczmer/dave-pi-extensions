@@ -1,5 +1,5 @@
-import { DynamicBorder, getSelectListTheme, keyHint, type ExtensionContext } from '@mariozechner/pi-coding-agent';
-import { Container, matchesKey, SelectList, Text, type Component, type SelectItem } from '@mariozechner/pi-tui';
+import { DynamicBorder, getSelectListTheme, keyHint, type ExtensionContext } from '@earendil-works/pi-coding-agent';
+import { Container, matchesKey, SelectList, Text, type Component, type SelectItem } from '@earendil-works/pi-tui';
 import { classifyPickerInput, filterItems, nextIndex, type KeyFacts, type PickerAction } from './picker-nav.ts';
 import type { PromptFragment } from './fragments.ts';
 

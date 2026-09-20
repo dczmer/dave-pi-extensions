@@ -5,8 +5,8 @@ import type {
   EventBus,
   ExtensionContext,
   ExtensionCommandContext,
-} from '@mariozechner/pi-coding-agent';
-import { createEventBus, createExtensionRuntime } from '@mariozechner/pi-coding-agent';
+} from '@earendil-works/pi-coding-agent';
+import { createEventBus, createExtensionRuntime } from '@earendil-works/pi-coding-agent';
 import { createCommandContext, createExtensionContext } from './pi-context.ts';
 
 export interface PiTestHarness {
@@ -14,6 +14,8 @@ export interface PiTestHarness {
   extension: Extension;
   runtime: ExtensionRuntime;
   eventBus: EventBus;
+  /** Custom entries appended via `pi.appendEntry` during tests. */
+  entries: Array<{ customType: string; data: unknown }>;
   command(name: string): {
     execute(args?: string, overrides?: Partial<ExtensionCommandContext>): Promise<ExtensionCommandContext>;
   };
@@ -36,7 +38,7 @@ async function loadExtensionFromFactoryInternal(
   runtime: ExtensionRuntime,
   extensionPath?: string,
 ): Promise<Extension> {
-  const indexPath = await import.meta.resolve('@mariozechner/pi-coding-agent');
+  const indexPath = await import.meta.resolve('@earendil-works/pi-coding-agent');
   const loaderPath = indexPath.replace('/index.js', '/core/extensions/loader.js');
   const { loadExtensionFromFactory } = await import(loaderPath);
   return loadExtensionFromFactory(factory, cwd, eventBus, runtime, extensionPath);
@@ -62,6 +64,15 @@ export async function createPiTestHarness(
 ): Promise<PiTestHarness> {
   const eventBus = createEventBus();
   const runtime = createExtensionRuntime();
+
+  // The runtime's appendEntry action is `notInitialized` until the runner
+  // binds its core, and the harness never binds it. Stub it before loading
+  // the extension and capture entries for assertions.
+  const entries: Array<{ customType: string; data: unknown }> = [];
+  runtime.appendEntry = ((customType: string, data?: unknown) => {
+    entries.push({ customType, data });
+  }) as typeof runtime.appendEntry;
+
   const extension = await loadExtensionFromFactoryInternal(factory, cwd, eventBus, runtime);
 
   return {
@@ -69,6 +80,7 @@ export async function createPiTestHarness(
     extension,
     runtime,
     eventBus,
+    entries,
     command(name: string) {
       const cmd = extension.commands.get(name);
       if (!cmd) {

@@ -1,6 +1,6 @@
 import { deepStrictEqual, strictEqual } from 'node:assert';
 import { test } from 'node:test';
-import type { SelectItem } from '@mariozechner/pi-tui';
+import type { SelectItem } from '@earendil-works/pi-tui';
 import {
   classifyPickerInput,
   filterItems,

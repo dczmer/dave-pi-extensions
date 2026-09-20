@@ -1,9 +1,10 @@
-import type { ExtensionAPI } from '@mariozechner/pi-coding-agent';
+import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
 import { loadConfig, type ConfigResult } from './config.ts';
 import { checkBashCommand } from './bash-guard.ts';
 import { checkFileAccess } from './file-access.ts';
 import { runPiGateBashCommand, runPiGateExternalCommand } from './command.ts';
-import { markPiGateLoaded, setBashEnabled, setExternalEnabled } from './session.ts';
+import { registerVerdictRenderer, logJudgeOutcome } from './log.ts';
+import { markPiGateLoaded, setBashEnabled, setExternalEnabled, getConfigResultOverride } from './session.ts';
 
 /**
  * pi-gate extension: permissive-by-default file & bash access gate.
@@ -19,6 +20,7 @@ import { markPiGateLoaded, setBashEnabled, setExternalEnabled } from './session.
  */
 export default function (pi: ExtensionAPI) {
   markPiGateLoaded();
+  registerVerdictRenderer(pi);
 
   // Session state survives in the process across `/new` (pi reloads the
   // extension but globalThis persists), so explicitly re-enable both
@@ -40,13 +42,17 @@ export default function (pi: ExtensionAPI) {
   });
 
   pi.on('tool_call', async (event, ctx) => {
-    const configResult: ConfigResult = loadConfig(ctx.cwd);
+    const configResult: ConfigResult = getConfigResultOverride() ?? loadConfig(ctx.cwd);
 
     if (event.toolName === 'bash') {
       const command = (event.input as { command?: string }).command;
       if (!command) return;
 
-      const allowed = await checkBashCommand(command, ctx.cwd, configResult, ctx);
+      const allowed = await checkBashCommand(command, ctx.cwd, configResult, ctx, {
+        hooks: {
+          onJudgeOutcome: (outcome, details) => logJudgeOutcome(pi, outcome, command, details),
+        },
+      });
       if (!allowed) {
         pi.events.emit('harness:block', {
           toolCallId: event.toolCallId,

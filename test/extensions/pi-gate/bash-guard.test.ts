@@ -10,8 +10,21 @@ import {
   setExternalEnabled,
 } from '../../../extensions/pi-gate/session.ts';
 import { withTempDir } from '../../utils/temp-dir.ts';
-import { createQueuedUIContext } from '../../utils/pi-context.ts';
+import { createQueuedUIContext, createAssistantMessage, createModelRegistryStub } from '../../utils/pi-context.ts';
+import type { Model } from '@earendil-works/pi-ai';
 import { createConfigResult } from './utils/config.ts';
+
+const JUDGE_YES_RESPONSE = `VERDICT: YES
+SUMMARY: Echoes the current user.
+AFFECTED PATHS: none
+REASON: Benign output command.`;
+
+const fakeJudgeModel = { provider: 'p', id: 'm' } as unknown as Model<any>;
+
+/** Queued context whose registry resolves the judge model `p/m`. */
+function createJudgeUIContext() {
+  return createQueuedUIContext({ modelRegistry: createModelRegistryStub({ models: [fakeJudgeModel] }) });
+}
 
 test('command allowed by config bashAllow pattern', async () => {
   const configResult = createConfigResult({
@@ -281,27 +294,118 @@ test('compound command: one statement denied', async () => {
   strictEqual(result, false);
 });
 
-test('unparsable command: user confirms allows', async () => {
+test('unparsable command: judge YES allows without prompting', async () => {
+  resetSessionState();
+  const configResult = createConfigResult({
+    global: { bashAllow: [], externalAllow: [], commandVerificationModel: 'p/m' },
+  });
+  const ctx = createJudgeUIContext();
+  const outcomes: Array<{ outcome: string; details?: unknown }> = [];
+
+  const result = await checkBashCommand('echo $(echo $(whoami))', '/fake/cwd', configResult, ctx, {
+    complete: async () => createAssistantMessage(JUDGE_YES_RESPONSE),
+    hooks: {
+      onJudgeOutcome: (outcome, details) => outcomes.push({ outcome, details }),
+    },
+  });
+
+  strictEqual(result, true);
+  strictEqual(outcomes.length, 1);
+  strictEqual(outcomes[0]!.outcome, 'allowed');
+  strictEqual((outcomes[0]!.details as { summary: string }).summary, 'Echoes the current user.');
+  strictEqual(ctx._notifications.length, 0);
+});
+
+test('unparsable command: judge NO blocks like a denied command', async () => {
+  const configResult = createConfigResult({
+    global: { bashAllow: [], externalAllow: [], commandVerificationModel: 'p/m' },
+  });
+  const ctx = createJudgeUIContext();
+  const outcomes: string[] = [];
+
+  const result = await checkBashCommand("echo 'unclosed", '/fake/cwd', configResult, ctx, {
+    complete: async () => createAssistantMessage('VERDICT: NO\nSUMMARY: broken\nAFFECTED PATHS: none\nREASON: nope'),
+    hooks: { onJudgeOutcome: (outcome) => outcomes.push(outcome) },
+  });
+
+  strictEqual(result, false);
+  deepStrictEqual(outcomes, ['denied']);
+});
+
+test('unparsable command: no judge configured escalates to manual confirm', async () => {
   const configResult = createConfigResult();
   const ctx = createQueuedUIContext();
   ctx.queueConfirm(true);
+  const outcomes: string[] = [];
 
-  const result = await checkBashCommand('echo $(echo $(whoami))', '/fake/cwd', configResult, ctx);
+  const result = await checkBashCommand('echo $(echo $(whoami))', '/fake/cwd', configResult, ctx, {
+    hooks: { onJudgeOutcome: (outcome) => outcomes.push(outcome) },
+  });
+
   strictEqual(result, true);
+  deepStrictEqual(outcomes, ['no-judge']);
   strictEqual(ctx._notifications.length, 1);
   strictEqual(ctx._notifications[0]!.message, 'Command not parsable — manual approval required');
   strictEqual(ctx._notifications[0]!.level, 'warning');
 });
 
-test('unparsable command: user rejects blocks', async () => {
-  const configResult = createConfigResult();
-  const ctx = createQueuedUIContext();
+test('unparsable command: judge error escalates and manual confirm decides', async () => {
+  const configResult = createConfigResult({
+    global: { bashAllow: [], externalAllow: [], commandVerificationModel: 'p/m' },
+  });
+  const ctx = createJudgeUIContext();
   ctx.queueConfirm(false);
+  const outcomes: string[] = [];
 
-  const result = await checkBashCommand("echo 'unclosed", '/fake/cwd', configResult, ctx);
+  const result = await checkBashCommand('echo $(echo $(whoami))', '/fake/cwd', configResult, ctx, {
+    complete: async () => {
+      throw new Error('judge down');
+    },
+    hooks: { onJudgeOutcome: (outcome) => outcomes.push(outcome) },
+  });
+
   strictEqual(result, false);
-  strictEqual(ctx._notifications.length, 1);
+  deepStrictEqual(outcomes, ['error']);
   strictEqual(ctx._notifications[0]!.message, 'Command not parsable — manual approval required');
+});
+
+test('unparsable command: judge without verdict escalates and manual confirm decides', async () => {
+  const configResult = createConfigResult({
+    global: { bashAllow: [], externalAllow: [], commandVerificationModel: 'p/m' },
+  });
+  const ctx = createJudgeUIContext();
+  ctx.queueConfirm(true);
+  const outcomes: string[] = [];
+
+  const result = await checkBashCommand('echo $(echo $(whoami))', '/fake/cwd', configResult, ctx, {
+    complete: async () => createAssistantMessage('hard to say'),
+    hooks: { onJudgeOutcome: (outcome) => outcomes.push(outcome) },
+  });
+
+  strictEqual(result, true);
+  deepStrictEqual(outcomes, ['no-verdict']);
+});
+
+test('unparsable command: judge still runs when the bash guard is toggled off', async () => {
+  resetSessionState();
+  setBashEnabled(false);
+  try {
+    const configResult = createConfigResult({
+      global: { bashAllow: [], externalAllow: [], commandVerificationModel: 'p/m' },
+    });
+    const ctx = createJudgeUIContext();
+    const outcomes: string[] = [];
+
+    const result = await checkBashCommand('echo $(echo $(whoami))', '/fake/cwd', configResult, ctx, {
+      complete: async () => createAssistantMessage(JUDGE_YES_RESPONSE),
+      hooks: { onJudgeOutcome: (outcome) => outcomes.push(outcome) },
+    });
+
+    strictEqual(result, true);
+    deepStrictEqual(outcomes, ['allowed']);
+  } finally {
+    resetSessionState();
+  }
 });
 
 test('unknown command allowed without prompting when bash guard is disabled', async () => {

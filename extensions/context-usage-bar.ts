@@ -6,8 +6,8 @@
  * go on the right before the model info.
  */
 
-import type { ExtensionAPI, ExtensionContext, Theme } from '@mariozechner/pi-coding-agent';
-import { truncateToWidth, visibleWidth } from '@mariozechner/pi-tui';
+import type { ExtensionAPI, ExtensionContext, Theme } from '@earendil-works/pi-coding-agent';
+import { truncateToWidth, visibleWidth } from '@earendil-works/pi-tui';
 import { isBashEnabled, isExternalEnabled, isPiGateLoaded } from './pi-gate/session.ts';
 
 // Progress bar characters (8 steps for smooth bar)

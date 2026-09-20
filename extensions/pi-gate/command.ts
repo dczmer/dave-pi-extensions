@@ -1,4 +1,4 @@
-import type { EventBus, ExtensionCommandContext } from '@mariozechner/pi-coding-agent';
+import type { EventBus, ExtensionCommandContext } from '@earendil-works/pi-coding-agent';
 import { isBashEnabled, setBashEnabled, isExternalEnabled, setExternalEnabled } from './session.ts';
 
 /** Toggleable pi-gate guard systems. */

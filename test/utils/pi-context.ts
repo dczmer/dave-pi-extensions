@@ -5,7 +5,8 @@ import type {
   ExtensionCommandContext,
   SessionManager,
   ModelRegistry,
-} from '@mariozechner/pi-coding-agent';
+} from '@earendil-works/pi-coding-agent';
+import type { AssistantMessage, Context, Model, ModelsApiStreamOptions, StopReason } from '@earendil-works/pi-ai';
 
 type ReadonlySessionManager = Pick<
   SessionManager,
@@ -18,6 +19,7 @@ type ReadonlySessionManager = Pick<
   | 'getEntry'
   | 'getLabel'
   | 'getBranch'
+  | 'buildContextEntries'
   | 'getHeader'
   | 'getEntries'
   | 'getTree'
@@ -87,6 +89,7 @@ export function createSessionManagerStub(overrides: Partial<ReadonlySessionManag
     getEntry: mock.fn(() => undefined),
     getLabel: mock.fn(() => undefined),
     getBranch: mock.fn(() => []),
+    buildContextEntries: mock.fn(() => []),
     getHeader: mock.fn(() => null),
     getEntries: mock.fn(() => []),
     getTree: mock.fn(() => []),
@@ -95,15 +98,54 @@ export function createSessionManagerStub(overrides: Partial<ReadonlySessionManag
   } as ReadonlySessionManager;
 }
 
-function createModelRegistryStub(): ModelRegistry {
+/** Build the minimal complete `AssistantMessage` literal (every field mandatory in 0.85.1). */
+export function createAssistantMessage(text: string, stopReason: StopReason = 'stop'): AssistantMessage {
   return {
-    authStorage: {} as ModelRegistry['authStorage'],
+    role: 'assistant',
+    content: [{ type: 'text', text }],
+    api: 'test',
+    provider: 'test',
+    model: 'test',
+    usage: {
+      input: 0,
+      output: 0,
+      cacheRead: 0,
+      cacheWrite: 0,
+      totalTokens: 0,
+      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+    },
+    stopReason,
+    timestamp: Date.now(),
+  };
+}
+
+export interface ModelRegistryStubOptions {
+  /** Models resolved by `find(provider, modelId)`. */
+  models?: Model<any>[];
+  /** Implementation for `complete`; defaults to a `VERDICT: YES` message. */
+  complete?: (model: Model<any>, context: Context, options?: ModelsApiStreamOptions<any>) => Promise<AssistantMessage>;
+}
+
+/**
+ * Build a `ModelRegistry` stub whose `find` resolves from `models`, whose
+ * `hasConfiguredAuth` returns true, and whose `complete` is a `mock.fn()`
+ * resolving to a configurable assistant message.
+ */
+export function createModelRegistryStub(options: ModelRegistryStubOptions = {}): ModelRegistry {
+  const models = options.models ?? [];
+  const completeImpl = options.complete ?? (async () => createAssistantMessage('VERDICT: YES'));
+  return {
     refresh: mock.fn(),
     getError: mock.fn(() => undefined),
-    getAll: mock.fn(() => []),
-    getAvailable: mock.fn(() => []),
-    find: mock.fn(() => undefined),
-    hasConfiguredAuth: mock.fn(() => false),
+    getAll: mock.fn(() => models),
+    getAvailable: mock.fn(() => models),
+    find: mock.fn((provider: string, modelId: string) =>
+      models.find((m) => {
+        const model = m as { provider?: string; id?: string };
+        return model.provider === provider && model.id === modelId;
+      }),
+    ),
+    hasConfiguredAuth: mock.fn(() => true),
     getApiKeyAndHeaders: mock.fn(async () => ({ ok: false, error: 'stub' })),
     getProviderAuthStatus: mock.fn(() => ({ status: 'none' as const })),
     getProviderDisplayName: mock.fn(() => ''),
@@ -111,6 +153,7 @@ function createModelRegistryStub(): ModelRegistry {
     isUsingOAuth: mock.fn(() => false),
     registerProvider: mock.fn(),
     unregisterProvider: mock.fn(),
+    complete: mock.fn(completeImpl),
   } as unknown as ModelRegistry;
 }
 
@@ -120,12 +163,15 @@ export function createExtensionContext(overrides: Partial<ExtensionContext> = {}
   const sessionManager = overrides.sessionManager ?? createSessionManagerStub();
   const base: ExtensionContext = {
     cwd: overrides.cwd ?? process.cwd(),
+    mode: overrides.mode ?? 'tui',
     hasUI: overrides.hasUI ?? true,
     ui,
     sessionManager,
     modelRegistry: overrides.modelRegistry ?? createModelRegistryStub(),
     model: overrides.model ?? undefined,
+    scopedModels: overrides.scopedModels ?? [],
     isIdle: mock.fn(() => true),
+    isProjectTrusted: mock.fn(() => true),
     signal: overrides.signal ?? undefined,
     abort: mock.fn(),
     hasPendingMessages: mock.fn(() => false),

@@ -16,6 +16,7 @@ A global white-list might have things like:
 
 ```json
 {
+  "commandVerificationModel": "anthropic/claude-sonnet-4-5",
   "bashAllow": [
     "ls *",
     "echo *",
@@ -71,6 +72,53 @@ This isn't perfect. It turns out parsing bash commands can get pretty complicate
 
 ![pi-gate-glob](../images/pi-gate-glob.png)
 
+### Unparsable commands (LLM judge)
+
+Some commands defeat the parser entirely (heredocs, exotic quoting). For those,
+pi-gate can hand the command to a verification model (an "LLM judge") that
+returns a YES/NO verdict:
+
+- The judge model is configured with the **global-only** `commandVerificationModel`
+  setting, a `"provider/modelId"` string, in `~/.pi/agent/pi-gate.json`:
+
+  ```json
+  {
+    "commandVerificationModel": "anthropic/claude-sonnet-4-5"
+  }
+  ```
+
+  `bashAllow` / `externalAllow` may be omitted (they default to `[]`), so a
+  minimal config containing only `commandVerificationModel` is valid. The
+  setting is ignored in the project config. There is no prompt and no model
+  picker: edit the global config and reload to set, change, or remove the
+  model. The extension never writes the config itself.
+
+- While the judge runs, the footer shows `pi-gate: Verifying bash command...`.
+- A `YES` verdict allows the command silently; a `NO` verdict blocks it exactly
+  like any other denied command. Expanding the verdict entry in the transcript
+  (`Ctrl+E`) shows the judge's summary, affected paths, and reasoning.
+- When the setting is absent, pi-gate never prompts and never shows a picker:
+  it logs `pi-gate: No judge LLM. Escalating to user.` and falls back to
+  manual approval.
+- On any failure — model missing or unauthenticated, LLM error, a 60-second
+  timeout, or an ambiguous verdict — pi-gate escalates to the same manual
+  approval dialog. A configured-but-broken model additionally shows a warning
+  notification naming the model reference and the global config path.
+
+Verdicts and escalations are recorded as `pi-gate-verdict` transcript entries
+(collapsed to a single line; expand for details). The six possible messages:
+
+- `pi-gate: Allowed bash command.`
+- `pi-gate: Denied bash command.`
+- `pi-gate: No judge LLM. Escalating to user.`
+- `pi-gate: Verification model unavailable. Escalating to user.`
+- `pi-gate: Error calling judgment LLM. Escalating to user.`
+- `pi-gate: Judgment LLM did not return a verdict. Escalating to user.`
+
+> **Privacy note:** the command text, the working directory, and both pi-gate
+> config files are sent verbatim to the verification model. Choose a local
+> model if that content is sensitive.
+
 ## External Files
 
 External files (outside of the project root directory) are also protected. I have hooked into the Read, Write, Edit, Find, Grep tools to compare the target file paths, and we extract file paths from any Bash tool calls and compare those as well.
@@ -102,6 +150,10 @@ current session:
 Each command flips its guard and reports the new state. Disabling a guard
 skips its prompts for the rest of the session; running the command again
 re-enables it. Starting a new session (`/new`) re-enables both guards.
+
+Note: toggling `/pi-gate-bash` off does not disable the LLM judge for
+unparsable commands — the judge replaces the manual-approval prompt one-for-one
+and still runs.
 
 ## Configuration
 
