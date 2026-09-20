@@ -183,9 +183,7 @@ test('footer shows both gate indicators with success letters when pi-gate is loa
   t.after(resetGateState);
   const line = await renderFooterLine({ piGateLoaded: true });
   strictEqual(
-    line.includes(
-      '<border>|</border> <success>B</success> <border>|</border> <success>E</success> <border>|</border>',
-    ),
+    line.includes('<border>|</border> <success>B</success> <border>|</border> <success>E</success> <border>|</border>'),
     true,
   );
   strictEqual(line.includes('33%'), true);

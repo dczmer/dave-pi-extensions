@@ -26,13 +26,15 @@ export interface ConfigResult {
  * Parse an unknown value into a `PiGateConfig`, normalizing tolerant
  * defaults: absent `bashAllow` / `externalAllow` default to `[]` (so a
  * minimal hand-edited config like `{ "commandVerificationModel": "p/m" }`
- * loads), while a present-but-malformed field rejects the whole file.
+ * loads), while a present-but-malformed field (including explicit `null`)
+ * rejects the whole file.
  */
 function parsePiGateConfig(v: unknown): PiGateConfig | null {
   if (typeof v !== 'object' || v === null) return null;
   const rec = v as Record<string, unknown>;
-  const bashAllow = rec.bashAllow ?? [];
-  const externalAllow = rec.externalAllow ?? [];
+  // `=== undefined` (not `??`) so an explicit `null` is malformed, not absent.
+  const bashAllow = rec.bashAllow === undefined ? [] : rec.bashAllow;
+  const externalAllow = rec.externalAllow === undefined ? [] : rec.externalAllow;
   if (!Array.isArray(bashAllow) || !bashAllow.every((x) => typeof x === 'string')) return null;
   if (!Array.isArray(externalAllow) || !externalAllow.every((x) => typeof x === 'string')) return null;
   const model = rec.commandVerificationModel;

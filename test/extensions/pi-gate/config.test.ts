@@ -249,3 +249,15 @@ test('present-but-malformed allow array still rejects the whole config', () => {
     deepStrictEqual(result.global, { bashAllow: [], externalAllow: [] });
   });
 });
+
+test('explicit null for an allow array is malformed and rejects the whole config', () => {
+  withTempDir('pi-gate-', (dir) => {
+    const globalPath = join(dir, 'global.json');
+    writeFileSync(globalPath, JSON.stringify({ bashAllow: null, commandVerificationModel: 'p/m' }));
+
+    // The whole file falls back to empty, so the valid model setting is
+    // discarded rather than silently honored alongside the null array.
+    const result = loadConfig(dir, globalPath);
+    deepStrictEqual(result.global, { bashAllow: [], externalAllow: [] });
+  });
+});

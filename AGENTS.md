@@ -62,6 +62,7 @@ var overrides. Instead, build a fake `ConfigResult` with the
 ## Project Structure
 
 Project layout:
+
 ```
 .
 ├── extensions/     # Pi extensions (TS) — see placement rules below
