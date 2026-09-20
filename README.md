@@ -1,6 +1,6 @@
 # dave-pi-extensions
 
-Minimalist [Pi](https://pi.dev/) extensions, favoring deterministic code over internal prompting logic, and aggressively minimizing external dependencies.
+Minimalist [Pi](https://pi.dev/) extensions with minimal external dependencies.
 
 ## Should I Use This?
 
