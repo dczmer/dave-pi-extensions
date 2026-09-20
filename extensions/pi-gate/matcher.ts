@@ -63,6 +63,11 @@ export function matchesAnyGlob(value: string, patterns: string[]): boolean {
  * excepted) so raw config strings like `/nix/blahblah/` behave identically
  * to `/nix/blahblah`.
  *
+ * Entries are expected to already be absolute: `loadConfig` normalizes
+ * `externalAllow` (tilde expansion, relative resolution) before any matching
+ * happens, so `~`-prefixed config entries are indistinguishable from their
+ * expanded form here.
+ *
  * @param path - Normalized absolute path to check.
  * @param entries - Whitelist entries (plain paths, directory paths, or globs).
  * @returns `true` if any entry approves the path.

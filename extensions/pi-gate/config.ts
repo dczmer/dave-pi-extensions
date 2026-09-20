@@ -1,6 +1,7 @@
 import { dirname, join } from 'node:path';
 import { readFileSync, mkdirSync, writeFileSync, renameSync, existsSync } from 'node:fs';
 import { homedir } from 'node:os';
+import { normalizePath } from './guards.ts';
 
 /** Access control configuration for pi-gate. */
 export interface PiGateConfig {
@@ -54,6 +55,34 @@ function createEmptyConfig(): PiGateConfig {
   };
 }
 
+/** Leading glob operator; such entries are deliberately unscoped, not paths. */
+const LEADING_GLOB_OPERATOR = /^[*?]/;
+
+/**
+ * Normalize one `externalAllow` entry into an absolute path pattern.
+ *
+ * Paths are always probed after `normalizePath` (tilde expanded, relative
+ * segments resolved), so a raw `~`-prefixed or relative config entry would
+ * never match anything.  Entries beginning with a glob operator (`*` or `?`)
+ * are intentionally unscoped — e.g. a bare `*` meaning "any external path" —
+ * and are returned verbatim.
+ *
+ * @param entry - Raw entry from a config file or the pattern prompt.
+ * @param cwd - Project working directory used to resolve relative entries.
+ * @returns An absolute pattern, or the entry unchanged when glob-led.
+ */
+export function normalizeExternalEntry(entry: string, cwd: string): string {
+  return LEADING_GLOB_OPERATOR.test(entry) ? entry : normalizePath(entry, cwd);
+}
+
+/** Apply {@link normalizeExternalEntry} to a whole config's `externalAllow` list. */
+function normalizeExternalEntries(config: PiGateConfig, cwd: string): PiGateConfig {
+  return {
+    ...config,
+    externalAllow: config.externalAllow.map((entry) => normalizeExternalEntry(entry, cwd)),
+  };
+}
+
 function loadSingleConfig(configPath: string): PiGateConfig {
   if (!existsSync(configPath)) {
     return createEmptyConfig();
@@ -104,6 +133,11 @@ function mergeConfigs(global: PiGateConfig, project: PiGateConfig): PiGateConfig
  * global config at `~/.pi/agent/pi-gate.json` unless `globalPathOverride`
  * is given (used by tests to stay in temp directories).
  *
+ * Every `externalAllow` entry is normalized (see
+ * {@link normalizeExternalEntry}) on load so hand-written `~`-prefixed or
+ * relative entries match the normalized absolute paths the guards probe with.
+ * `bashAllow` patterns are matched against raw command text and are left as-is.
+ *
  * @param cwd - Project working directory used to locate the project config.
  * @param globalPathOverride - Optional explicit global config path.
  * @returns Merged configuration along with the raw global and project configs
@@ -113,8 +147,8 @@ export function loadConfig(cwd: string, globalPathOverride?: string): ConfigResu
   const globalPath = globalPathOverride ?? DEFAULT_GLOBAL_CONFIG_PATH;
   const projectPath = join(cwd, '.pi', 'pi-gate.json');
 
-  const global = loadSingleConfig(globalPath);
-  const project = loadSingleConfig(projectPath);
+  const global = normalizeExternalEntries(loadSingleConfig(globalPath), cwd);
+  const project = normalizeExternalEntries(loadSingleConfig(projectPath), cwd);
   const merged = mergeConfigs(global, project);
 
   return {

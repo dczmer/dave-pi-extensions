@@ -3,8 +3,21 @@ import { test } from 'node:test';
 import { writeFileSync, mkdirSync, statSync, readdirSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
-import { type PiGateConfig, loadConfig, saveConfig } from '../../../extensions/pi-gate/config.ts';
+import {
+  type PiGateConfig,
+  loadConfig,
+  saveConfig,
+  normalizeExternalEntry,
+} from '../../../extensions/pi-gate/config.ts';
 import { withTempDir } from '../../utils/temp-dir.ts';
+
+test('normalizeExternalEntry expands paths and preserves glob-led entries', () => {
+  strictEqual(normalizeExternalEntry('~/.pi', '/cwd'), join(homedir(), '.pi'));
+  strictEqual(normalizeExternalEntry('logs/*', '/cwd'), '/cwd/logs/*');
+  strictEqual(normalizeExternalEntry('/abs/*', '/cwd'), '/abs/*');
+  strictEqual(normalizeExternalEntry('*', '/cwd'), '*');
+  strictEqual(normalizeExternalEntry('?tmp', '/cwd'), '?tmp');
+});
 
 test('loadConfig returns merged config from project file', () => {
   withTempDir('pi-gate-', (dir) => {
@@ -153,6 +166,52 @@ test('atomic save operation (temp file + rename)', () => {
     saveConfig(config, configPath);
     const entries = readdirSync(dir);
     strictEqual(entries.includes('pi-gate.json'), true);
+  });
+});
+
+test('loadConfig normalizes tilde and relative externalAllow entries to absolute paths', () => {
+  withTempDir('pi-gate-', (dir) => {
+    const projectConfigDir = join(dir, '.pi');
+    mkdirSync(projectConfigDir, { recursive: true });
+    writeFileSync(
+      join(projectConfigDir, 'pi-gate.json'),
+      JSON.stringify({ bashAllow: [], externalAllow: ['~/.pi', 'tmp/logs/*', '/abs/*'] }),
+    );
+
+    // Explicit global path so the developer's real ~/.pi config is not merged in.
+    const result = loadConfig(dir, join(dir, 'missing-global.json'));
+    // A raw `~/.pi` entry could never match a normalized probe path, so it must
+    // be expanded at load time (regression: pi-gate always re-prompted for
+    // `~/.pi` despite the entry being present in the config file).
+    deepStrictEqual(result.project.externalAllow, [join(homedir(), '.pi'), join(dir, 'tmp', 'logs', '*'), '/abs/*']);
+    deepStrictEqual(result.merged.externalAllow, result.project.externalAllow);
+  });
+});
+
+test('loadConfig leaves glob-led externalAllow entries unscoped', () => {
+  withTempDir('pi-gate-', (dir) => {
+    const globalPath = join(dir, 'global.json');
+    writeFileSync(globalPath, JSON.stringify({ externalAllow: ['*', '?tmp'] }));
+
+    const result = loadConfig(dir, globalPath);
+    // A bare `*` means "any external path"; resolving it against cwd would
+    // silently narrow it to the project tree.
+    deepStrictEqual(result.global.externalAllow, ['*', '?tmp']);
+  });
+});
+
+test('loadConfig normalizes global and project externalAllow entries with the same cwd', () => {
+  withTempDir('pi-gate-', (dir) => {
+    const globalPath = join(dir, 'global.json');
+    const projectConfigDir = join(dir, '.pi');
+    mkdirSync(projectConfigDir, { recursive: true });
+    writeFileSync(globalPath, JSON.stringify({ externalAllow: ['~/shared'] }));
+    writeFileSync(join(projectConfigDir, 'pi-gate.json'), JSON.stringify({ externalAllow: ['../outside'] }));
+
+    const result = loadConfig(dir, globalPath);
+    deepStrictEqual(result.global.externalAllow, [join(homedir(), 'shared')]);
+    deepStrictEqual(result.project.externalAllow, [join(dir, '..', 'outside')]);
+    deepStrictEqual(result.merged.externalAllow, [join(homedir(), 'shared'), join(dir, '..', 'outside')]);
   });
 });
 

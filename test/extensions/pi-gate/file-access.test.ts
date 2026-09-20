@@ -1,8 +1,9 @@
 import { strictEqual, deepStrictEqual } from 'node:assert';
-import { test } from 'node:test';
+import { test, mock } from 'node:test';
 import { mkdirSync, readFileSync, existsSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { homedir } from 'node:os';
+import type { ExtensionUIContext } from '@earendil-works/pi-coding-agent';
 import { checkFileAccess } from '../../../extensions/pi-gate/file-access.ts';
 import {
   approveExternalPattern,
@@ -11,7 +12,7 @@ import {
   setExternalEnabled,
 } from '../../../extensions/pi-gate/session.ts';
 import { withTempDir } from '../../utils/temp-dir.ts';
-import { createQueuedUIContext } from '../../utils/pi-context.ts';
+import { createQueuedUIContext, createExtensionContext, createUIContext } from '../../utils/pi-context.ts';
 import { createConfigResult } from './utils/config.ts';
 
 test('project file allowed with empty deny list', async () => {
@@ -167,6 +168,60 @@ test('tilde and relative patterns are normalized before session storage', async 
 
   // The stored pattern must be normalized against the real home directory.
   strictEqual(isExternalApproved(join(homedir(), 'notes', 'upcoming.md')), true);
+});
+
+test('config absolute externalAllow entry covers a tilde-supplied path', async () => {
+  resetSessionState();
+  const configResult = createConfigResult({
+    merged: { bashAllow: [], externalAllow: [join(homedir(), '.pi')] },
+    global: { bashAllow: [], externalAllow: [join(homedir(), '.pi')] },
+  });
+  // Empty queues: any prompt would resolve to denial, so `true` proves silence.
+  const ctx = createQueuedUIContext();
+  strictEqual(await checkFileAccess('~/.pi/agent/agents/reviewer.md', '/fake/cwd', configResult, ctx), true);
+});
+
+test('tilde pattern typed at the prompt is persisted normalized and absolute', async () => {
+  resetSessionState();
+  await withTempDir('pi-gate-', async (dir) => {
+    const projectPath = join(dir, '.pi', 'pi-gate.json');
+    const globalPath = join(dir, 'global.json');
+    mkdirSync(dirname(projectPath), { recursive: true });
+
+    const configResult = createConfigResult({ projectPath, globalPath });
+    const ctx = createQueuedUIContext();
+    ctx.queueEditor('~/.pi');
+    ctx.queueSelect('Project');
+
+    strictEqual(await checkFileAccess('~/.pi/agent/foo.json', dir, configResult, ctx), true);
+
+    // Persisted verbatim, a `~/.pi` entry would be dead config.
+    const expected = join(homedir(), '.pi');
+    deepStrictEqual(configResult.project.externalAllow, [expected]);
+    strictEqual(configResult.merged.externalAllow.includes(expected), true);
+
+    const saved = JSON.parse(readFileSync(projectPath, 'utf-8'));
+    deepStrictEqual(saved, { bashAllow: [], externalAllow: [expected] });
+
+    // The entry is live for siblings in a later session, once reloaded.
+    strictEqual(isExternalApproved(join(homedir(), '.pi', 'agent', 'bar.json')), true);
+  });
+});
+
+test('prompt prefill shows a normalized absolute path, not the raw tool input', async () => {
+  resetSessionState();
+  const prefills: Array<string | undefined> = [];
+  const ui = createUIContext({
+    editor: mock.fn(async (_title: string, prefill?: string) => {
+      prefills.push(prefill);
+      return undefined;
+    }) as unknown as ExtensionUIContext['editor'],
+  });
+  const ctx = createExtensionContext({ ui });
+
+  const result = await checkFileAccess('~/.pi/agent/foo.json', '/fake/cwd', createConfigResult(), ctx);
+  strictEqual(result, false);
+  deepStrictEqual(prefills, [join(homedir(), '.pi', 'agent', 'foo.json')]);
 });
 
 test('external file allowed without prompting when external guard is disabled', async () => {
