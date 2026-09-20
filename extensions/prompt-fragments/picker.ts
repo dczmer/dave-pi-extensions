@@ -1,5 +1,6 @@
 import { DynamicBorder, getSelectListTheme, keyHint, type ExtensionContext } from '@mariozechner/pi-coding-agent';
 import { Container, matchesKey, SelectList, Text, type Component, type SelectItem } from '@mariozechner/pi-tui';
+import { classifyPickerInput, filterItems, nextIndex, type KeyFacts, type PickerAction } from './picker-nav.ts';
 import type { PromptFragment } from './fragments.ts';
 
 /** Checked-set state for the picker, independent of rendering. */
@@ -38,6 +39,10 @@ export async function pickFragments(ctx: ExtensionContext, fragments: PromptFrag
   return ctx.ui.custom<string[] | null>((tui, theme, keybindings, done) => {
     let state = createPickerState();
     let filter = '';
+    let filterMode = false;
+    // Mirror of SelectList's private selectedIndex, within the mirrored
+    // filtered list. Reset to 0 on every setFilter (SelectList does the same).
+    let index = 0;
 
     const container = new Container();
     container.addChild(new DynamicBorder((s: string) => theme.fg('accent', s)));
@@ -61,9 +66,10 @@ export async function pickFragments(ctx: ExtensionContext, fragments: PromptFrag
       const picked = checkedInOrder(state, fragments);
       selectedText.setText(theme.fg('accent', picked.length > 0 ? `Selected: ${picked.join(', ')}` : 'Selected: none'));
       const hint =
-        `${keyHint('tui.select.up', 'navigate')} • space toggle • ` +
-        `${keyHint('tui.input.submit', 'accept')} • ${keyHint('tui.select.cancel', 'cancel')}` +
-        (filter ? ` • filter: "${filter}"` : ' • type to filter');
+        filterMode ?
+          `filter: "${filter}"${filter ? '' : '…'} • type to filter • ${keyHint('tui.select.cancel', 'clear filter')}`
+        : `j/k or ${keyHint('tui.select.up', '↑/↓')} navigate • space/l toggle • / filter • ` +
+          `${keyHint('tui.input.submit', 'accept')} • ${keyHint('tui.select.cancel', 'cancel')}`;
       hintText.setText(theme.fg('dim', hint));
       tui.requestRender();
     };
@@ -73,38 +79,69 @@ export async function pickFragments(ctx: ExtensionContext, fragments: PromptFrag
       render: (width: number) => container.render(width),
       invalidate: () => container.invalidate(),
       handleInput: (data: string) => {
-        // Space toggles only when the filter is empty (else it's filter text).
-        if (filter === '' && matchesKey(data, 'space')) {
-          const current = selectList.getSelectedItem();
-          if (current) {
-            state = toggleChecked(state, current.value);
-            // Row marker: mutate the shared item's label and re-render.
-            current.label = state.checked.has(current.value) ? `● ${current.value}` : current.value;
-            selectList.invalidate();
-            refresh();
+        const facts: KeyFacts = {
+          submit: keybindings.matches(data, 'tui.input.submit'),
+          cancel: keybindings.matches(data, 'tui.select.cancel'),
+          space: matchesKey(data, 'space'),
+          backspace: matchesKey(data, 'backspace'),
+          // tui.select.up/down (not raw matchesKey 'up'/'down') so user remaps keep working.
+          arrow:
+            keybindings.matches(data, 'tui.select.up') ? -1
+            : keybindings.matches(data, 'tui.select.down') ? 1
+            : 0,
+        };
+        const action: PickerAction = classifyPickerInput(data, filterMode ? 'filter' : 'nav', facts);
+
+        // Single choke point for filter changes: SelectList resets its
+        // selection to 0 on setFilter — mirror that unconditionally.
+        const applyFilter = (next: string) => {
+          filter = next;
+          selectList.setFilter(filter);
+          index = 0;
+        };
+
+        switch (action.kind) {
+          case 'toggle': {
+            // Same item object → label mutation for the ● marker still works.
+            const current = filterItems(items, filter)[index];
+            if (current) {
+              state = toggleChecked(state, current.value);
+              // Row marker: mutate the shared item's label and re-render.
+              current.label = state.checked.has(current.value) ? `● ${current.value}` : current.value;
+              selectList.invalidate();
+            }
+            break;
           }
-          return;
-        }
-        if (keybindings.matches(data, 'tui.input.submit')) {
-          const picked = checkedInOrder(state, fragments);
-          done(picked.length > 0 ? picked : null); // empty accept = cancel
-          return;
-        }
-        if (keybindings.matches(data, 'tui.select.cancel')) {
-          done(null);
-          return;
-        }
-        // Own the filter: printable keys mutate our filter; backspace edits
-        // it. setFilter() resets the selection to 0, so only call it when the
-        // filter actually changed — never on navigation keys.
-        if (data.length === 1 && data >= ' ') {
-          filter += data;
-          selectList.setFilter(filter);
-        } else if (matchesKey(data, 'backspace') && filter.length > 0) {
-          filter = filter.slice(0, -1);
-          selectList.setFilter(filter);
-        } else {
-          selectList.handleInput(data); // navigation (up/down) still delegated
+          case 'accept': {
+            const picked = checkedInOrder(state, fragments);
+            done(picked.length > 0 ? picked : null); // empty accept = cancel
+            break;
+          }
+          case 'cancel':
+            done(null); // reachable only in nav mode
+            break;
+          case 'enter-filter':
+            filterMode = true;
+            break;
+          case 'exit-filter':
+            // Q1=(a): clear the filter and return to nav; picker stays open.
+            filterMode = false;
+            applyFilter('');
+            break;
+          case 'filter-char':
+            applyFilter(filter + action.char);
+            break;
+          case 'filter-backspace':
+            if (filter.length > 0) applyFilter(filter.slice(0, -1));
+            break;
+          case 'move': {
+            const length = filterItems(items, filter).length;
+            index = nextIndex(index, action.delta, length);
+            selectList.setSelectedIndex(index); // clamps; render() reads live
+            break;
+          }
+          case 'ignore':
+            break;
         }
         refresh();
       },

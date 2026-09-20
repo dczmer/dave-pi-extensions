@@ -35,7 +35,7 @@ A global white-list might have things like:
     "git diff*",
     "git log*"
   ],
-  "externalAllow": ["/home/dave/.pi/agent/extensions/pi-gate.json", "/tmp/*", "/dev/null", "/home/dave/tmp/*"]
+  "externalAllow": ["/home/dave/.pi/agent/pi-gate.json", "/tmp/*", "/dev/null", "/home/dave/tmp/*"]
 }
 ```
 
@@ -112,11 +112,11 @@ I have split the configuration into global and project level settings files. Sin
 The global config file:
 
 ```
-$HOME/.pi/agent/extensions/pi-gate.json
+$HOME/.pi/agent/pi-gate.json
 ```
 
 And the per-project config file:
 
 ```
-./.pi/extensions/pi-gate.json
+./.pi/pi-gate.json
 ```

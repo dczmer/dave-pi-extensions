@@ -43,7 +43,7 @@ test('external file allowed when in session approved list', async () => {
 
 test('external file approved by user and persisted to project config', async () => {
   await withTempDir('pi-gate-', async (dir) => {
-    const projectPath = join(dir, '.pi', 'extensions', 'pi-gate.json');
+    const projectPath = join(dir, '.pi', 'pi-gate.json');
     const globalPath = join(dir, 'global.json');
     mkdirSync(dirname(projectPath), { recursive: true });
 
@@ -63,7 +63,7 @@ test('external file approved by user and persisted to project config', async () 
 
 test('external file approved by user and persisted to global config', async () => {
   await withTempDir('pi-gate-', async (dir) => {
-    const projectPath = join(dir, '.pi', 'extensions', 'pi-gate.json');
+    const projectPath = join(dir, '.pi', 'pi-gate.json');
     const globalPath = join(dir, 'global.json');
     mkdirSync(dirname(projectPath), { recursive: true });
 
@@ -84,7 +84,7 @@ test('external file approved by user and persisted to global config', async () =
 
 test('external file approved by user but not persisted', async () => {
   await withTempDir('pi-gate-', async (dir) => {
-    const projectPath = join(dir, '.pi', 'extensions', 'pi-gate.json');
+    const projectPath = join(dir, '.pi', 'pi-gate.json');
     const globalPath = join(dir, 'global.json');
     mkdirSync(dirname(projectPath), { recursive: true });
 

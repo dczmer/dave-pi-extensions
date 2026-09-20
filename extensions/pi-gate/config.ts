@@ -29,7 +29,7 @@ function isPiGateConfig(v: unknown): v is PiGateConfig {
 }
 
 const home = homedir() ?? '/';
-const DEFAULT_GLOBAL_CONFIG_PATH = join(home, '.pi', 'agent', 'extensions', 'pi-gate.json');
+const DEFAULT_GLOBAL_CONFIG_PATH = join(home, '.pi', 'agent', 'pi-gate.json');
 
 function createEmptyConfig(): PiGateConfig {
   return {
@@ -88,8 +88,8 @@ function mergeConfigs(global: PiGateConfig, project: PiGateConfig): PiGateConfig
 
 /**
  * Load global and project pi-gate configs, merge them, and return the
- * combined result.  Project config lives at `{cwd}/.pi/extensions/pi-gate.json`;
- * global config at the standard agent extensions path.
+ * combined result.  Project config lives at `{cwd}/.pi/pi-gate.json`;
+ * global config at `~/.pi/agent/pi-gate.json`.
  *
  * @param cwd - Project working directory used to locate the project config.
  * @returns Merged configuration along with the raw global and project configs
@@ -97,7 +97,7 @@ function mergeConfigs(global: PiGateConfig, project: PiGateConfig): PiGateConfig
  */
 export function loadConfig(cwd: string): ConfigResult {
   const globalPath = DEFAULT_GLOBAL_CONFIG_PATH;
-  const projectPath = join(cwd, '.pi', 'extensions', 'pi-gate.json');
+  const projectPath = join(cwd, '.pi', 'pi-gate.json');
 
   const global = loadSingleConfig(globalPath);
   const project = loadSingleConfig(projectPath);

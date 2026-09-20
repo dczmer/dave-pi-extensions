@@ -18,16 +18,17 @@ async function runFragmentPicker(mode: FragmentMode, ctx: ExtensionContext): Pro
 
   const { fragments, warnings } = loadFragments();
   if (warnings.length > 0) ctx.ui.notify(warnings.join('; '), 'warning');
-  if (fragments.length === 0) {
-    ctx.ui.notify(`No fragments defined — add some to ${fragmentsPath()}`, 'info');
+  const list = fragments[mode];
+  if (list.length === 0) {
+    ctx.ui.notify(`No ${mode} fragments defined — add some to ${fragmentsPath()}`, 'info');
     return;
   }
 
   pickerOpen = true;
   try {
-    const picked = await pickFragments(ctx, fragments);
+    const picked = await pickFragments(ctx, list);
     if (!picked) return; // cancelled / empty accept: leave editor untouched
-    const selected = fragments.filter((f) => picked.includes(f.name));
+    const selected = list.filter((f) => picked.includes(f.name));
     const next = composePrompt(ctx.ui.getEditorText(), selected, mode);
     ctx.ui.setEditorText(next);
     ctx.ui.notify(`${mode === 'prepend' ? 'Prepended' : 'Appended'} ${selected.length} fragment(s)`, 'info');

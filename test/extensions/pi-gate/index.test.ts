@@ -10,7 +10,7 @@ import { resetSessionState, isBashEnabled, isExternalEnabled } from '../../../ex
 
 test('blocks disallowed bash command and emits harness:block', async () => {
   await withTempDir('pi-gate-', async (dir) => {
-    mkdirSync(join(dir, '.pi', 'extensions'), { recursive: true });
+    mkdirSync(join(dir, '.pi'), { recursive: true });
     const harness = await createPiTestHarness(piGateExtension, dir);
 
     const emitted = captureEvents(harness, 'harness:block');
@@ -40,7 +40,7 @@ test('blocks disallowed bash command and emits harness:block', async () => {
 
 test('blocks disallowed file access and emits harness:block', async () => {
   await withTempDir('pi-gate-', async (dir) => {
-    mkdirSync(join(dir, '.pi', 'extensions'), { recursive: true });
+    mkdirSync(join(dir, '.pi'), { recursive: true });
     const harness = await createPiTestHarness(piGateExtension, dir);
 
     const emitted = captureEvents(harness, 'harness:block');
@@ -68,7 +68,7 @@ test('blocks disallowed file access and emits harness:block', async () => {
 
 test('allowed command does not emit harness:block', async () => {
   await withTempDir('pi-gate-', async (dir) => {
-    mkdirSync(join(dir, '.pi', 'extensions'), { recursive: true });
+    mkdirSync(join(dir, '.pi'), { recursive: true });
     const harness = await createPiTestHarness(piGateExtension, dir);
 
     const emitted = captureEvents(harness, 'harness:block');
@@ -90,7 +90,7 @@ test('allowed command does not emit harness:block', async () => {
 
 test('registers the /pi-gate-bash and /pi-gate-external commands', async () => {
   await withTempDir('pi-gate-', async (dir) => {
-    mkdirSync(join(dir, '.pi', 'extensions'), { recursive: true });
+    mkdirSync(join(dir, '.pi'), { recursive: true });
     const harness = await createPiTestHarness(piGateExtension, dir);
 
     const commands = harness.listRegisteredCommands();
@@ -102,7 +102,7 @@ test('registers the /pi-gate-bash and /pi-gate-external commands', async () => {
 test('/pi-gate-bash allows unknown bash commands without prompting', async () => {
   await withTempDir('pi-gate-', async (dir) => {
     resetSessionState();
-    mkdirSync(join(dir, '.pi', 'extensions'), { recursive: true });
+    mkdirSync(join(dir, '.pi'), { recursive: true });
     const harness = await createPiTestHarness(piGateExtension, dir);
 
     await harness.command('pi-gate-bash').execute('');
@@ -124,7 +124,7 @@ test('/pi-gate-bash allows unknown bash commands without prompting', async () =>
 test('/pi-gate-bash still gates external paths in file tools', async () => {
   await withTempDir('pi-gate-', async (dir) => {
     resetSessionState();
-    mkdirSync(join(dir, '.pi', 'extensions'), { recursive: true });
+    mkdirSync(join(dir, '.pi'), { recursive: true });
     const harness = await createPiTestHarness(piGateExtension, dir);
 
     await harness.command('pi-gate-bash').execute('');
@@ -146,7 +146,7 @@ test('/pi-gate-bash still gates external paths in file tools', async () => {
 test('/pi-gate-external off allows external file access without prompting', async () => {
   await withTempDir('pi-gate-', async (dir) => {
     resetSessionState();
-    mkdirSync(join(dir, '.pi', 'extensions'), { recursive: true });
+    mkdirSync(join(dir, '.pi'), { recursive: true });
     const harness = await createPiTestHarness(piGateExtension, dir);
 
     await harness.command('pi-gate-external').execute('');
@@ -168,7 +168,7 @@ test('/pi-gate-external off allows external file access without prompting', asyn
 test('/pi-gate-external still gates bash command patterns', async () => {
   await withTempDir('pi-gate-', async (dir) => {
     resetSessionState();
-    mkdirSync(join(dir, '.pi', 'extensions'), { recursive: true });
+    mkdirSync(join(dir, '.pi'), { recursive: true });
     const harness = await createPiTestHarness(piGateExtension, dir);
 
     await harness.command('pi-gate-external').execute('');
@@ -190,7 +190,7 @@ test('/pi-gate-external still gates bash command patterns', async () => {
 test('session_start with reason "new" re-enables both guards', async () => {
   await withTempDir('pi-gate-', async (dir) => {
     resetSessionState();
-    mkdirSync(join(dir, '.pi', 'extensions'), { recursive: true });
+    mkdirSync(join(dir, '.pi'), { recursive: true });
     const harness = await createPiTestHarness(piGateExtension, dir);
 
     await harness.command('pi-gate-bash').execute('');
@@ -209,7 +209,7 @@ test('session_start with reason "new" re-enables both guards', async () => {
 test('session_start with other reasons does not re-enable guards', async () => {
   await withTempDir('pi-gate-', async (dir) => {
     resetSessionState();
-    mkdirSync(join(dir, '.pi', 'extensions'), { recursive: true });
+    mkdirSync(join(dir, '.pi'), { recursive: true });
     const harness = await createPiTestHarness(piGateExtension, dir);
 
     await harness.command('pi-gate-bash').execute('');
@@ -227,7 +227,7 @@ test('session_start with other reasons does not re-enable guards', async () => {
 test('/pi-gate-bash toggles the bash guard through the registered command', async () => {
   await withTempDir('pi-gate-', async (dir) => {
     resetSessionState();
-    mkdirSync(join(dir, '.pi', 'extensions'), { recursive: true });
+    mkdirSync(join(dir, '.pi'), { recursive: true });
     const harness = await createPiTestHarness(piGateExtension, dir);
 
     await harness.command('pi-gate-bash').execute('');
@@ -243,7 +243,7 @@ test('/pi-gate-bash toggles the bash guard through the registered command', asyn
 test('/pi-gate-external toggles the external guard through the registered command', async () => {
   await withTempDir('pi-gate-', async (dir) => {
     resetSessionState();
-    mkdirSync(join(dir, '.pi', 'extensions'), { recursive: true });
+    mkdirSync(join(dir, '.pi'), { recursive: true });
     const harness = await createPiTestHarness(piGateExtension, dir);
 
     await harness.command('pi-gate-external').execute('');

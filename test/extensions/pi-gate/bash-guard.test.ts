@@ -61,7 +61,7 @@ test('command with external files all allowed', async () => {
 
 test('no match prompts user, allows, persists to project, recurses, succeeds', async () => {
   await withTempDir('pi-gate-', async (dir) => {
-    const projectPath = join(dir, '.pi', 'extensions', 'pi-gate.json');
+    const projectPath = join(dir, '.pi', 'pi-gate.json');
     const globalPath = join(dir, 'global.json');
     mkdirSync(dirname(projectPath), { recursive: true });
 
@@ -81,7 +81,7 @@ test('no match prompts user, allows, persists to project, recurses, succeeds', a
 
 test('no match prompts user, allows, persists to global, recurses, succeeds', async () => {
   await withTempDir('pi-gate-', async (dir) => {
-    const projectPath = join(dir, '.pi', 'extensions', 'pi-gate.json');
+    const projectPath = join(dir, '.pi', 'pi-gate.json');
     const globalPath = join(dir, 'global.json');
     mkdirSync(dirname(projectPath), { recursive: true });
 
@@ -102,7 +102,7 @@ test('no match prompts user, allows, persists to global, recurses, succeeds', as
 
 test('no match prompts user, allows, skips persist, recurses, succeeds', async () => {
   await withTempDir('pi-gate-', async (dir) => {
-    const projectPath = join(dir, '.pi', 'extensions', 'pi-gate.json');
+    const projectPath = join(dir, '.pi', 'pi-gate.json');
     const globalPath = join(dir, 'global.json');
     mkdirSync(dirname(projectPath), { recursive: true });
 
