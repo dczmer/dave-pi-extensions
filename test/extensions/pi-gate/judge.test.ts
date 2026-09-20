@@ -1,6 +1,6 @@
 import { strictEqual, deepStrictEqual, ok } from 'node:assert';
 import { test, mock } from 'node:test';
-import type { AssistantMessage, Context, Model } from '@earendil-works/pi-ai';
+import type { AssistantMessage, Context, Model, ModelsApiStreamOptions } from '@earendil-works/pi-ai';
 import {
   JUDGE_SYSTEM_PROMPT,
   buildJudgePrompt,
@@ -11,7 +11,12 @@ import {
   type JudgePromptInput,
 } from '../../../extensions/pi-gate/judge.ts';
 import { resetSessionState, approveBashPattern, approveExternalPattern } from '../../../extensions/pi-gate/session.ts';
-import { createQueuedUIContext, createAssistantMessage, createModelRegistryStub } from '../../utils/pi-context.ts';
+import {
+  createQueuedUIContext,
+  createAssistantMessage,
+  createModelRegistryStub,
+  createSessionManagerStub,
+} from '../../utils/pi-context.ts';
 import { createConfigResult } from './utils/config.ts';
 
 const JUDGE_RESPONSE = `VERDICT: YES
@@ -198,6 +203,85 @@ test('judgeBashCommand shows and clears the verifying status', async () => {
   deepStrictEqual(setStatus.mock.calls[1]?.arguments, ['pi-gate', undefined]);
 });
 
+test('judgeBashCommand forwards the session id and abort signal to the completer', async () => {
+  const ctx = createJudgeContext({
+    sessionManager: createSessionManagerStub({ getSessionId: mock.fn(() => 'sess-1') }),
+  });
+  let seenOptions: ModelsApiStreamOptions<any> | undefined;
+  await judgeBashCommand('cmd', '/fake/cwd', createJudgeConfig('p/m'), ctx, {
+    complete: async (_model, _context, options) => {
+      seenOptions = options;
+      return createAssistantMessage('VERDICT: YES');
+    },
+  });
+
+  strictEqual(seenOptions?.sessionId, 'sess-1');
+  ok(seenOptions?.signal instanceof AbortSignal);
+});
+
+test('judgeBashCommand sends x-opencode-session headers for opencode providers', async () => {
+  const opencodeModel = {
+    provider: 'opencode-go',
+    id: 'm',
+    baseUrl: 'https://opencode.ai/api',
+  } as unknown as Model<any>;
+  const ctx = createJudgeContext({
+    modelRegistry: createModelRegistryStub({ models: [opencodeModel] }),
+    sessionManager: createSessionManagerStub({ getSessionId: mock.fn(() => 'sess-1') }),
+  });
+  let seenOptions: ModelsApiStreamOptions<any> | undefined;
+  await judgeBashCommand('cmd', '/fake/cwd', createJudgeConfig('opencode-go/m'), ctx, {
+    complete: async (_model, _context, options) => {
+      seenOptions = options;
+      return createAssistantMessage('VERDICT: YES');
+    },
+  });
+
+  deepStrictEqual(seenOptions?.headers, { 'x-opencode-session': 'sess-1', 'x-opencode-client': 'pi' });
+});
+
+test('judgeBashCommand omits attribution headers for non-opencode providers', async () => {
+  const otherModel = {
+    provider: 'p',
+    id: 'm',
+    baseUrl: 'https://api.example.com/v1',
+  } as unknown as Model<any>;
+  const ctx = createJudgeContext({
+    modelRegistry: createModelRegistryStub({ models: [otherModel] }),
+    sessionManager: createSessionManagerStub({ getSessionId: mock.fn(() => 'sess-1') }),
+  });
+  let seenOptions: ModelsApiStreamOptions<any> | undefined;
+  await judgeBashCommand('cmd', '/fake/cwd', createJudgeConfig('p/m'), ctx, {
+    complete: async (_model, _context, options) => {
+      seenOptions = options;
+      return createAssistantMessage('VERDICT: YES');
+    },
+  });
+
+  strictEqual(seenOptions?.headers, undefined);
+});
+
+test('judgeBashCommand matches opencode attribution by baseUrl host, not only provider id', async () => {
+  const hostedModel = {
+    provider: 'custom-opencode',
+    id: 'm',
+    baseUrl: 'https://opencode.ai/zen',
+  } as unknown as Model<any>;
+  const ctx = createJudgeContext({
+    modelRegistry: createModelRegistryStub({ models: [hostedModel] }),
+    sessionManager: createSessionManagerStub({ getSessionId: mock.fn(() => 'sess-1') }),
+  });
+  let seenOptions: ModelsApiStreamOptions<any> | undefined;
+  await judgeBashCommand('cmd', '/fake/cwd', createJudgeConfig('custom-opencode/m'), ctx, {
+    complete: async (_model, _context, options) => {
+      seenOptions = options;
+      return createAssistantMessage('VERDICT: YES');
+    },
+  });
+
+  deepStrictEqual(seenOptions?.headers, { 'x-opencode-session': 'sess-1', 'x-opencode-client': 'pi' });
+});
+
 test('judgeBashCommand stopReason error → escalate/error', async () => {
   const ctx = createJudgeContext();
   const result = await judgeBashCommand('cmd', '/fake/cwd', createJudgeConfig('p/m'), ctx, {
@@ -206,6 +290,42 @@ test('judgeBashCommand stopReason error → escalate/error', async () => {
 
   strictEqual(result.decision, 'escalate');
   strictEqual(result.outcome, 'error');
+  strictEqual(result.error, 'stopReason: error');
+});
+
+test('judgeBashCommand stopReason error surfaces provider errorMessage', async () => {
+  const ctx = createJudgeContext();
+  const result = await judgeBashCommand('cmd', '/fake/cwd', createJudgeConfig('p/m'), ctx, {
+    complete: async () =>
+      createAssistantMessage('', 'error', {
+        errorMessage: '401 Unauthorized: invalid API key',
+        rawStopReason: 'authentication_error',
+      }),
+  });
+
+  strictEqual(result.decision, 'escalate');
+  strictEqual(result.outcome, 'error');
+  strictEqual(
+    result.error,
+    'stopReason: error — rawStopReason: authentication_error — 401 Unauthorized: invalid API key',
+  );
+});
+
+test('judgeBashCommand aborted on judge deadline reports timeout', async () => {
+  const ctx = createJudgeContext();
+  const result = await judgeBashCommand('cmd', '/fake/cwd', createJudgeConfig('p/m'), ctx, {
+    timeoutMs: 1,
+    complete: (_model, _context, options) =>
+      new Promise((resolve) => {
+        options?.signal?.addEventListener('abort', () =>
+          resolve(createAssistantMessage('', 'aborted', { errorMessage: 'Request was aborted' })),
+        );
+      }),
+  });
+
+  strictEqual(result.decision, 'escalate');
+  strictEqual(result.outcome, 'error');
+  strictEqual(result.error, 'stopReason: aborted — judge timed out after 1ms — Request was aborted');
 });
 
 test('judgeBashCommand thrown error → escalate/error', async () => {
@@ -218,6 +338,7 @@ test('judgeBashCommand thrown error → escalate/error', async () => {
 
   strictEqual(result.decision, 'escalate');
   strictEqual(result.outcome, 'error');
+  strictEqual(result.error, 'boom');
 });
 
 test('judgeBashCommand no verdict → escalate/no-verdict', async () => {

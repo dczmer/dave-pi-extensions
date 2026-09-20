@@ -202,6 +202,8 @@ export interface JudgeResult {
   outcome?: JudgeOutcome;
   /** Parsed judge output for the transcript entry, when available. */
   details?: JudgeVerdictDetails;
+  /** Underlying failure detail when the outcome is 'error' (for diagnostics). */
+  error?: string;
 }
 
 /** Hard deadline for the judge call; on expiry we abort and escalate. */
@@ -220,12 +222,65 @@ export interface JudgeDeps {
   timeoutMs?: number;
 }
 
+/**
+ * Build the opencode session-attribution headers for a judge request.
+ *
+ * The extension-facing `modelRegistry.complete` forwards options straight to
+ * the provider runtime, so pi's own `x-opencode-session` attribution (added
+ * by the agent's main loop via `transformHeaders`) never runs and passing
+ * `sessionId` alone is silently ignored. Providers like opencode-go
+ * hard-reject requests without the header (HTTP 400 `MissingSessionID`), so
+ * it must be set explicitly. Matching mirrors pi's `getSessionHeaders`
+ * (provider id or opencode.ai host).
+ *
+ * @param model - Resolved verification model.
+ * @param sessionId - Current session id, sent as the routing header value.
+ * @returns The attribution headers for opencode models, else `undefined`.
+ */
+function opencodeSessionHeaders(model: Model<any>, sessionId: string): Record<string, string> | undefined {
+  let opencodeHost: boolean;
+  try {
+    opencodeHost = new URL(model.baseUrl).hostname === 'opencode.ai';
+  } catch {
+    opencodeHost = false;
+  }
+  const isOpencode = model.provider === 'opencode' || model.provider === 'opencode-go' || opencodeHost;
+  if (!isOpencode) return undefined;
+  return { 'x-opencode-session': sessionId, 'x-opencode-client': 'pi' };
+}
+
 /** Join all text blocks of an assistant message into one string. */
 function joinTextBlocks(message: AssistantMessage): string {
   return message.content
     .filter((block): block is { type: 'text'; text: string } => block.type === 'text')
     .map((block) => block.text)
     .join('\n');
+}
+
+/**
+ * Build the diagnostic text for a judge message that did not stop cleanly.
+ *
+ * `complete()` resolves (rather than throws) on provider failure, so
+ * `stopReason` alone is just `"error"` and says nothing. The actionable cause
+ * lives in `errorMessage` (provider error text), `rawStopReason` (provider
+ * stop token), and `diagnostics`; an expired judge deadline is called out
+ * explicitly so a timeout is not mistaken for a provider fault.
+ *
+ * @param message - Assistant message returned by the judge completer.
+ * @param timedOut - Whether the judge deadline (not the caller) aborted the call.
+ * @param timeoutMs - Deadline in milliseconds, for the timeout message.
+ * @returns Human-readable failure detail, `" — "`-joined.
+ */
+function describeJudgeFailure(message: AssistantMessage, timedOut: boolean, timeoutMs: number): string {
+  const parts = [`stopReason: ${message.stopReason}`];
+  if (timedOut) parts.push(`judge timed out after ${timeoutMs}ms`);
+  if (message.rawStopReason) parts.push(`rawStopReason: ${message.rawStopReason}`);
+  if (message.errorMessage) parts.push(message.errorMessage);
+  for (const diagnostic of message.diagnostics ?? []) {
+    const detail = diagnostic.error?.message ?? (diagnostic.details ? JSON.stringify(diagnostic.details) : undefined);
+    if (detail) parts.push(`${diagnostic.type}: ${detail}`);
+  }
+  return parts.join(' — ');
 }
 
 /**
@@ -270,6 +325,10 @@ export async function judgeBashCommand(
   });
 
   const complete = deps.complete ?? ((model, context, options) => ctx.modelRegistry.complete(model, context, options));
+  // The extension-facing registry ignores `sessionId`; opencode providers
+  // need the attribution header set explicitly or they reject the request.
+  const sessionId = ctx.sessionManager.getSessionId();
+  const attributionHeaders = opencodeSessionHeaders(resolution.model, sessionId);
 
   const deadline = new AbortController();
   const timer = setTimeout(() => deadline.abort(), deps.timeoutMs ?? JUDGE_TIMEOUT_MS);
@@ -283,11 +342,19 @@ export async function judgeBashCommand(
         systemPrompt: JUDGE_SYSTEM_PROMPT,
         messages: [{ role: 'user', content: prompt, timestamp: Date.now() }],
       },
-      { signal },
+      // Providers like opencode-go reject requests without the session
+      // attribution header; `sessionId` alone is ignored on the extension
+      // registry path, so opencode models also get explicit headers.
+      { signal, sessionId, ...(attributionHeaders ? { headers: attributionHeaders } : {}) },
     );
 
     if (message.stopReason !== 'stop') {
-      return { decision: 'escalate', outcome: 'error' };
+      const timeoutMs = deps.timeoutMs ?? JUDGE_TIMEOUT_MS;
+      return {
+        decision: 'escalate',
+        outcome: 'error',
+        error: describeJudgeFailure(message, deadline.signal.aborted, timeoutMs),
+      };
     }
 
     const text = joinTextBlocks(message);
@@ -297,8 +364,12 @@ export async function judgeBashCommand(
     if (verdict === 'YES') return { decision: 'allow', outcome: 'allowed', details };
     if (verdict === 'NO') return { decision: 'deny', outcome: 'denied', details };
     return { decision: 'escalate', outcome: 'no-verdict' };
-  } catch {
-    return { decision: 'escalate', outcome: 'error' };
+  } catch (err) {
+    return {
+      decision: 'escalate',
+      outcome: 'error',
+      error: err instanceof Error ? err.message : String(err),
+    };
   } finally {
     clearTimeout(timer);
     ctx.ui.setStatus('pi-gate', undefined);

@@ -29,6 +29,8 @@ export interface VerdictEntryData {
   command: string;
   outcome: JudgeOutcome;
   details?: JudgeVerdictDetails;
+  /** Underlying failure detail, shown when an error outcome entry is expanded. */
+  error?: string;
 }
 
 /**
@@ -53,6 +55,9 @@ export function registerVerdictRenderer(pi: ExtensionAPI): void {
         box.addChild(new Text(theme.fg('dim', `AFFECTED PATHS: ${d.affectedPaths}`), 1, 0));
         box.addChild(new Text(theme.fg('dim', `REASON: ${d.reason}`), 1, 0));
       }
+      if (data.error) {
+        box.addChild(new Text(theme.fg('warning', `ERROR: ${data.error}`), 1, 0));
+      }
       box.addChild(new Text(theme.fg('dim', `COMMAND: ${data.command}`), 1, 0));
     }
 
@@ -67,17 +72,20 @@ export function registerVerdictRenderer(pi: ExtensionAPI): void {
  * @param outcome - Judge outcome selecting the fixed message text.
  * @param command - Raw bash command that was judged.
  * @param details - Parsed judge output, stored for the expanded renderer.
+ * @param error - Underlying failure detail for error outcomes.
  */
 export function logJudgeOutcome(
   pi: ExtensionAPI,
   outcome: JudgeOutcome,
   command: string,
   details?: JudgeVerdictDetails,
+  error?: string,
 ): void {
   pi.appendEntry<VerdictEntryData>(VERDICT_ENTRY_TYPE, {
     text: MESSAGES[outcome],
     command,
     outcome,
     ...(details ? { details } : {}),
+    ...(error ? { error } : {}),
   });
 }

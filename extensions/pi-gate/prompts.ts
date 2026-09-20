@@ -20,6 +20,12 @@ export interface ExtensionContext {
   };
   /** Model catalogue, auth checks, and completion used to resolve/run the judge. */
   modelRegistry: ModelRegistry;
+  /**
+   * Session info. The judge forwards the session id to the completer so
+   * providers that require session attribution (e.g. opencode-go) receive
+   * their routing header.
+   */
+  sessionManager: { getSessionId(): string };
   /** Abort signal for the active turn, when available. */
   signal?: AbortSignal | undefined;
 }

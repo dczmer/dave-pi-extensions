@@ -138,7 +138,7 @@ function parseStatementEntries(command: string): StatementEntry[] | null {
 /** Transcript-logging hooks for judge outcomes. */
 export interface BashGuardHooks {
   /** Called with each judge outcome that has a transcript message. */
-  onJudgeOutcome?(outcome: JudgeOutcome, details?: JudgeVerdictDetails): void;
+  onJudgeOutcome?(outcome: JudgeOutcome, details?: JudgeVerdictDetails, error?: string): void;
 }
 
 /** Optional dependencies for {@link checkBashCommand}. */
@@ -225,7 +225,7 @@ export async function checkBashCommand(
     const result = await judgeBashCommand(command, cwd, configResult, ctx, {
       ...(options.complete ? { complete: options.complete } : {}),
     });
-    if (result.outcome) options.hooks?.onJudgeOutcome?.(result.outcome, result.details);
+    if (result.outcome) options.hooks?.onJudgeOutcome?.(result.outcome, result.details, result.error);
     if (result.decision === 'allow') return true;
     if (result.decision === 'deny') return false;
 

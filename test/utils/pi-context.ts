@@ -99,7 +99,11 @@ export function createSessionManagerStub(overrides: Partial<ReadonlySessionManag
 }
 
 /** Build the minimal complete `AssistantMessage` literal (every field mandatory in 0.85.1). */
-export function createAssistantMessage(text: string, stopReason: StopReason = 'stop'): AssistantMessage {
+export function createAssistantMessage(
+  text: string,
+  stopReason: StopReason = 'stop',
+  extra: { errorMessage?: string; rawStopReason?: string } = {},
+): AssistantMessage {
   return {
     role: 'assistant',
     content: [{ type: 'text', text }],
@@ -115,6 +119,8 @@ export function createAssistantMessage(text: string, stopReason: StopReason = 's
       cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
     },
     stopReason,
+    ...(extra.errorMessage === undefined ? {} : { errorMessage: extra.errorMessage }),
+    ...(extra.rawStopReason === undefined ? {} : { rawStopReason: extra.rawStopReason }),
     timestamp: Date.now(),
   };
 }

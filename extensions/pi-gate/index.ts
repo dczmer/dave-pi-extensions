@@ -50,7 +50,7 @@ export default function (pi: ExtensionAPI) {
 
       const allowed = await checkBashCommand(command, ctx.cwd, configResult, ctx, {
         hooks: {
-          onJudgeOutcome: (outcome, details) => logJudgeOutcome(pi, outcome, command, details),
+          onJudgeOutcome: (outcome, details, error) => logJudgeOutcome(pi, outcome, command, details, error),
         },
       });
       if (!allowed) {
