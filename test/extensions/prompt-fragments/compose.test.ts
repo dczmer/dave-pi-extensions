@@ -1,6 +1,6 @@
 import { strictEqual } from 'node:assert';
 import { test } from 'node:test';
-import { composePrompt } from '../../../extensions/prompt-fragments/compose.ts';
+import { composePrompt, stripCommandInvocation } from '../../../extensions/prompt-fragments/compose.ts';
 
 const fr = (name: string, prompt: string) => ({ name, prompt });
 
@@ -34,4 +34,33 @@ test('empty fragments after trimming are dropped', () => {
 
 test('multi-fragment block joins with blank lines in given order', () => {
   strictEqual(composePrompt('', [fr('a', 'A'), fr('b', 'B'), fr('c', 'C')], 'prepend'), 'A\n\nB\n\nC');
+});
+
+test('stripCommandInvocation removes the bare command', () => {
+  strictEqual(stripCommandInvocation('/fragments-append', 'fragments-append'), '');
+});
+
+test('stripCommandInvocation removes the command with arguments', () => {
+  strictEqual(stripCommandInvocation('/fragments-append foo bar', 'fragments-append'), '');
+});
+
+test('stripCommandInvocation tolerates surrounding whitespace', () => {
+  strictEqual(stripCommandInvocation('  /fragments-prepend  ', 'fragments-prepend'), '');
+});
+
+test('stripCommandInvocation preserves text on later lines', () => {
+  strictEqual(stripCommandInvocation('/fragments-append\nkeep me', 'fragments-append'), 'keep me');
+});
+
+test('stripCommandInvocation leaves unrelated text untouched', () => {
+  strictEqual(stripCommandInvocation('hello world', 'fragments-append'), 'hello world');
+  strictEqual(stripCommandInvocation('/other-command', 'fragments-append'), '/other-command');
+});
+
+test('stripCommandInvocation requires a whole-token match', () => {
+  strictEqual(stripCommandInvocation('/fragments-appendage', 'fragments-append'), '/fragments-appendage');
+});
+
+test('stripCommandInvocation drops a pi collision suffix', () => {
+  strictEqual(stripCommandInvocation('/fragments-append:2', 'fragments-append'), '');
 });

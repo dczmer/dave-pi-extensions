@@ -1,19 +1,20 @@
 import type { ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-agent';
 import { fragmentsPath, loadFragments } from './fragments.ts';
-import { composePrompt, type FragmentMode } from './compose.ts';
+import { composePrompt, stripCommandInvocation, type FragmentMode } from './compose.ts';
 import { pickFragments } from './picker.ts';
 
 /** Guard against re-entrant picker opens (shortcut double-fire). */
 let pickerOpen = false;
 
 /**
- * Shared flow for shortcuts and the /fragment command: load fragments,
- * run the picker, then compose the new editor text. The editor text must
- * be read and written only after pickFragments resolves — custom()
- * restores the pre-open editor snapshot on close, wiping any earlier
- * setEditorText call.
+ * Shared flow for the /fragments-prepend and /fragments-append commands:
+ * load fragments, run the picker, then compose the new editor text. The
+ * editor text must be read and written only after pickFragments resolves —
+ * custom() restores the pre-open editor snapshot on close, wiping any
+ * earlier setEditorText call. The invoking command text is stripped from
+ * the editor first, since some callers (leader-key) leave it in place.
  */
-async function runFragmentPicker(mode: FragmentMode, ctx: ExtensionContext): Promise<void> {
+async function runFragmentPicker(mode: FragmentMode, command: string, ctx: ExtensionContext): Promise<void> {
   if (!ctx.hasUI || pickerOpen) return;
 
   const { fragments, warnings } = loadFragments();
@@ -29,7 +30,8 @@ async function runFragmentPicker(mode: FragmentMode, ctx: ExtensionContext): Pro
     const picked = await pickFragments(ctx, list);
     if (!picked) return; // cancelled / empty accept: leave editor untouched
     const selected = list.filter((f) => picked.includes(f.name));
-    const next = composePrompt(ctx.ui.getEditorText(), selected, mode);
+    const current = stripCommandInvocation(ctx.ui.getEditorText(), command);
+    const next = composePrompt(current, selected, mode);
     ctx.ui.setEditorText(next);
     ctx.ui.notify(`${mode === 'prepend' ? 'Prepended' : 'Appended'} ${selected.length} fragment(s)`, 'info');
   } finally {
@@ -46,10 +48,10 @@ export default function (pi: ExtensionAPI) {
   // Commands work with custom editors and are discoverable via /help.
   pi.registerCommand('fragments-prepend', {
     description: 'Pick prompt fragments to prepend to the editor',
-    handler: async (_args, ctx) => runFragmentPicker('prepend', ctx),
+    handler: async (_args, ctx) => runFragmentPicker('prepend', 'fragments-prepend', ctx),
   });
   pi.registerCommand('fragments-append', {
     description: 'Pick prompt fragments to append to the editor',
-    handler: async (_args, ctx) => runFragmentPicker('append', ctx),
+    handler: async (_args, ctx) => runFragmentPicker('append', 'fragments-append', ctx),
   });
 }
