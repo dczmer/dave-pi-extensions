@@ -3,7 +3,8 @@
  *
  * Adds a visual progress bar to the footer showing context window usage
  * with percentage and max size. Extension statuses from other extensions
- * go on the right before the model info.
+ * go on the right before the model info, which carries a single-character
+ * reasoning-effort indicator.
  */
 
 import type { ExtensionAPI, ExtensionContext, Theme } from '@earendil-works/pi-coding-agent';
@@ -15,6 +16,27 @@ const BAR_CHARS = ['░', '▏', '▎', '▍', '▌', '▋', '▊', '▉', '█'
 
 const YELLOW_THRESHOLD = 80_000;
 const RED_THRESHOLD = 120_000;
+
+/** Reasoning-effort levels as surfaced by the session runtime. */
+export type EffortLevel = NonNullable<ExtensionContext['thinkingLevel']>;
+
+/**
+ * Single-character glyph per reasoning level. "off" is an empty marker; the
+ * remaining glyphs rise like a fill gauge so the level reads at a glance even
+ * when theme colors are similar.
+ */
+const EFFORT_GLYPHS: Record<EffortLevel, string> = {
+  off: '·',
+  minimal: '▁',
+  low: '▂',
+  medium: '▃',
+  high: '▄',
+  xhigh: '▅',
+  max: '█',
+};
+
+/** Render hook for the installed footer, repainted when the effort level changes. */
+let requestFooterRender: (() => void) | undefined;
 
 /** Render a terminal progress bar with border and visible empty track. */
 export function renderProgressBar(used: number, max: number, width: number, theme: any): string {
@@ -57,14 +79,27 @@ export function renderGateIndicator(label: 'B' | 'E', enabled: boolean, theme: T
   return `${theme.fg('border', '|')} ${letter} `;
 }
 
+/**
+ * Render the single-character reasoning-effort indicator, colored with the
+ * same theme color the prompt input border uses for that level
+ * (`theme.getThinkingBorderColor`).
+ */
+export function renderEffortIndicator(level: EffortLevel | undefined, theme: Theme): string {
+  const resolved = level ?? 'off';
+  const glyph = EFFORT_GLYPHS[resolved] ?? EFFORT_GLYPHS.off;
+  return theme.getThinkingBorderColor(resolved)(glyph);
+}
+
 function installFooter(ctx: ExtensionContext, pi: ExtensionAPI) {
   ctx.ui.setFooter((tui, theme, footerData) => {
     footerData.onBranchChange(() => tui.requestRender());
     const unsub = pi.events.on('pi-gate:toggled', () => tui.requestRender());
+    requestFooterRender = () => tui.requestRender();
 
     return {
       dispose() {
         unsub();
+        requestFooterRender = undefined;
       },
       invalidate() {},
       render(width: number): string[] {
@@ -104,7 +139,9 @@ function installFooter(ctx: ExtensionContext, pi: ExtensionAPI) {
         const branch = footerData.getGitBranch();
         const modelId = model?.id || 'no-model';
         const provider = model?.provider || 'unknown';
-        const right = statusPrefix + theme.fg('dim', `${provider}/${modelId}${branch ? ` (${branch})` : ''}`);
+        const effort = renderEffortIndicator(ctx.thinkingLevel, theme);
+        const modelInfo = theme.fg('dim', `${provider}/${modelId}${branch ? ` (${branch})` : ''}`);
+        const right = `${statusPrefix}${effort} ${modelInfo}`;
 
         // Calculate spacing
         const leftWidth = visibleWidth(contextSection);
@@ -145,5 +182,11 @@ export default function (pi: ExtensionAPI) {
   // Update on model changes
   pi.on('model_select', async () => {
     // Footer re-renders automatically from context usage update
+  });
+
+  // The effort indicator mirrors the prompt input border, which repaints on
+  // thinking-level changes; the footer needs its own repaint request.
+  pi.on('thinking_level_select', async () => {
+    requestFooterRender?.();
   });
 }

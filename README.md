@@ -18,7 +18,7 @@ I'd like to say "no external dependencies" besides the pi SDK and node built-ins
 
 ![context-usage-bar](./docs/images/custom-context-bar.png)
 
-Simple 1-line context bar with token usage, provider and model, git branch, and a color-coded context window "progress bar".
+Simple 1-line context bar with token usage, provider and model, reasoning-effort indicator, git branch, and a color-coded context window "progress bar".
 
 [Read more here](./docs/extensions/context-usage-bar.md).
 

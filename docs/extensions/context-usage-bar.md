@@ -12,6 +12,8 @@ Simply a customized status bar to show the things I want, and only those things.
   - Yellow from 80K => 120K tokens (warning)
   - Red above 120K tokens ("dumb zone")
 - Provider and model selection.
+- Reasoning-effort indicator: a single colored character next to the model name,
+  using the same theme color as the prompt input border for that level.
 - Current branch.
 
 # The Progress Bar
@@ -27,3 +29,24 @@ The color coding is based on a theoretical threshold of about 80K tokens, not ba
 ![Extensions](../images/custom-context-bar-extensions.png)
 
 Context bar components from other extensions display directly to the left of the progress bar.
+
+# Reasoning Effort Indicator
+
+The character immediately before `provider/model` shows the active reasoning
+level, so cycling the level with pi's thinking-level keybinding is visible
+without opening a menu:
+
+| Level     | Glyph |
+| --------- | ----- |
+| `off`     | `·`   |
+| `minimal` | `▁`   |
+| `low`     | `▂`   |
+| `medium`  | `▃`   |
+| `high`    | `▄`   |
+| `xhigh`   | `▅`   |
+| `max`     | `█`   |
+
+The glyphs rise like a fill gauge, and each is colored with the theme's
+matching `thinking*` color - the same color pi uses for the prompt input
+border at that level (see `theme.getThinkingBorderColor`). `off` uses the
+muted `thinkingOff` color, so a dim dot reads as "reasoning disabled".

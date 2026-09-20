@@ -5,6 +5,8 @@ import contextUsageBar, {
   renderProgressBar,
   formatTokens,
   renderGateIndicator,
+  renderEffortIndicator,
+  type EffortLevel,
 } from '../../../extensions/context-usage-bar.ts';
 import {
   markPiGateLoaded,
@@ -19,6 +21,7 @@ function mockTheme() {
   return {
     fg: (color: string, text: string) => `<${color}>${text}</${color}>`,
     bg: (color: string, text: string) => `<bg:${color}>${text}</bg:${color}>`,
+    getThinkingBorderColor: (level: string) => (text: string) => `<thinking-${level}>${text}</thinking-${level}>`,
   };
 }
 
@@ -99,6 +102,24 @@ test('renderGateIndicator colors the letter error when disabled', () => {
   strictEqual(result, '<border>|</border> <error>E</error> ');
 });
 
+test('renderEffortIndicator uses the thinking border color for the level', () => {
+  const theme = mockTheme();
+  strictEqual(renderEffortIndicator('medium', theme as never), '<thinking-medium>▃</thinking-medium>');
+  strictEqual(renderEffortIndicator('max', theme as never), '<thinking-max>█</thinking-max>');
+});
+
+test('renderEffortIndicator renders a distinct glyph per level', () => {
+  const theme = mockTheme();
+  const levels: EffortLevel[] = ['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'];
+  const glyphs = levels.map((level) => renderEffortIndicator(level, theme as never));
+  strictEqual(new Set(glyphs).size, levels.length);
+});
+
+test('renderEffortIndicator falls back to the off glyph when level is undefined', () => {
+  const theme = mockTheme();
+  strictEqual(renderEffortIndicator(undefined, theme as never), '<thinking-off>·</thinking-off>');
+});
+
 interface FakePi {
   pi: ExtensionAPI;
   handlers: Map<string, (event: unknown, ctx: ExtensionContext) => Promise<void>>;
@@ -127,6 +148,7 @@ interface RenderOptions {
   bashEnabled?: boolean;
   externalEnabled?: boolean;
   withUsage?: boolean;
+  thinkingLevel?: EffortLevel;
 }
 
 /**
@@ -146,6 +168,7 @@ async function renderFooterLine(opts: RenderOptions): Promise<string> {
     model: (withUsage ?
       { id: 'test-model', provider: 'test-provider', contextWindow: 120_000 }
     : undefined) as ExtensionContext['model'],
+    thinkingLevel: opts.thinkingLevel ?? 'off',
   });
 
   const { pi, handlers } = createFakePi();
@@ -210,6 +233,48 @@ test('footer renders gate indicators even without context usage', async (t) => {
   strictEqual(line.includes('%'), false); // no context bar, indicators only
 });
 
+test('footer places the effort indicator immediately before the model info', async (t) => {
+  t.after(resetGateState);
+  const line = await renderFooterLine({ thinkingLevel: 'high' });
+  strictEqual(line.includes('<thinking-high>▄</thinking-high> <dim>test-provider/test-model</dim>'), true);
+});
+
+test('footer shows the dim off glyph when reasoning is disabled', async (t) => {
+  t.after(resetGateState);
+  const line = await renderFooterLine({ thinkingLevel: 'off' });
+  strictEqual(line.includes('<thinking-off>·</thinking-off> <dim>test-provider/test-model</dim>'), true);
+});
+
+test('footer re-renders when the thinking level changes', async (t) => {
+  t.after(resetGateState);
+  resetSessionState();
+  resetPiGateLoaded();
+
+  const ctx = createExtensionContext({ thinkingLevel: 'low' });
+  const { pi, handlers } = createFakePi();
+  contextUsageBar(pi);
+  await handlers.get('session_start')!({}, ctx);
+
+  const setFooter = ctx.ui.setFooter as unknown as ReturnType<typeof mock.fn>;
+  const factory = setFooter.mock.calls[0]!.arguments[0] as (
+    tui: { requestRender: ReturnType<typeof mock.fn> },
+    theme: unknown,
+    footerData: unknown,
+  ) => { dispose(): void; render(width: number): string[] };
+  const requestRender = mock.fn();
+  factory({ requestRender }, mockTheme(), {
+    onBranchChange: () => () => {},
+    getExtensionStatuses: () => new Map(),
+    getGitBranch: () => null,
+  });
+
+  await handlers.get('thinking_level_select')!(
+    { type: 'thinking_level_select', level: 'high', previousLevel: 'low' },
+    ctx,
+  );
+  strictEqual(requestRender.mock.calls.length, 1);
+});
+
 test('footer subscribes to pi-gate:toggled re-render events and disposes cleanly', async (t) => {
   t.after(resetGateState);
   resetSessionState();
@@ -243,4 +308,35 @@ test('footer subscribes to pi-gate:toggled re-render events and disposes cleanly
   strictEqual(requestRender.mock.calls.length, 1);
 
   component.dispose();
+});
+
+test('footer stops re-rendering on thinking level changes after dispose', async (t) => {
+  t.after(resetGateState);
+  resetSessionState();
+  resetPiGateLoaded();
+
+  const ctx = createExtensionContext({ thinkingLevel: 'low' });
+  const { pi, handlers } = createFakePi();
+  contextUsageBar(pi);
+  await handlers.get('session_start')!({}, ctx);
+
+  const setFooter = ctx.ui.setFooter as unknown as ReturnType<typeof mock.fn>;
+  const factory = setFooter.mock.calls[0]!.arguments[0] as (
+    tui: { requestRender: ReturnType<typeof mock.fn> },
+    theme: unknown,
+    footerData: unknown,
+  ) => { dispose(): void; render(width: number): string[] };
+  const requestRender = mock.fn();
+  const component = factory({ requestRender }, mockTheme(), {
+    onBranchChange: () => () => {},
+    getExtensionStatuses: () => new Map(),
+    getGitBranch: () => null,
+  });
+
+  component.dispose();
+  await handlers.get('thinking_level_select')!(
+    { type: 'thinking_level_select', level: 'high', previousLevel: 'low' },
+    ctx,
+  );
+  strictEqual(requestRender.mock.calls.length, 0);
 });
