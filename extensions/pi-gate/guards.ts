@@ -8,6 +8,7 @@
  * @returns A clean absolute path with no redundant segments.
  */
 import { homedir } from 'node:os';
+import { filterPathArguments } from '../../src/path-args.ts';
 
 export function normalizePath(filePath: string, cwd: string): string {
   if (filePath.startsWith('~')) {
@@ -173,13 +174,13 @@ function skipHeredoc(command: string, start: number): { token: string; newI: num
  * Tokenize a bash command string and extract positional arguments that look
  * like file paths.  Respects quoting (single, double, ANSI-C), skips heredocs,
  * command/process substitution bodies, redirection operators, and shell control
- * operators.
+ * operators.  Applies command-aware filtering so regex patterns and inline
+ * scripts are not mistaken for paths.
  *
  * @param command - Raw bash command string.
  * @returns Array of tokens that may represent file-system paths.
  */
 export function extractPathsFromCommand(command: string): string[] {
-  const paths: string[] = [];
   const tokens: string[] = [];
   let i = 0;
 
@@ -244,13 +245,16 @@ export function extractPathsFromCommand(command: string): string[] {
   const args = tokens.slice(1);
   const operators = new Set(['|', '||', '&', '&&', ';', '(', ')', '{', '}', '>', '>>', '<', '<<', '<<-']);
 
+  // Keep only unquoted, non-operator argument tokens; command-aware
+  // filtering then drops regex patterns and inline scripts (e.g. the
+  // unquoted `/pat/` in `grep /pat/ file.txt`).
+  const candidates: string[] = [];
   for (const token of args) {
-    if (token.startsWith('-')) continue;
     if (operators.has(token)) continue;
     if (token.startsWith("'") || token.startsWith('"') || token.startsWith("$'")) continue;
     if (token.startsWith('$(') || token.startsWith('`') || token.startsWith('<(') || token.startsWith('>(')) continue;
-    paths.push(token);
+    candidates.push(token);
   }
 
-  return paths;
+  return filterPathArguments(tokens[0], candidates);
 }

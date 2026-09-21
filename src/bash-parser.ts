@@ -1,4 +1,5 @@
 import bashParse from 'bash-parser';
+import { filterPathArguments } from './path-args.ts';
 
 // ---------------------------------------------------------------------------
 // AST types (used by pi-gate)
@@ -303,31 +304,20 @@ export function collectStatements(source: string, ast: AstScript): string[] {
 
 /**
  * Extract potential file-path arguments from a Command node's suffix.
- * Skips options (-flag), redirects, operators, and variable references.
- * Replaces manual re-tokenization of command strings.
+ *
+ * Delegates to command-aware argument filtering so that regex patterns and
+ * inline scripts (`grep '/pat/'`, `sed '/pat/,+15p'`, `awk '/pat/{ cmd }'`)
+ * are not mistaken for paths. Redirects are handled separately, operators
+ * are not words, and variable references are dropped by the filter.
  */
 export function extractPathsFromAST(cmd: AstCommand): string[] {
-  const paths: string[] = [];
-  if (!cmd.suffix) return paths;
+  if (!cmd.suffix) return [];
 
+  const args: string[] = [];
   for (const item of cmd.suffix) {
-    // Redirects have their own file field, not a command argument
-    if (item.type === 'Redirect') continue;
     if (item.type !== 'Word') continue;
-
-    const w = item as AstWord;
-    const t = w.text;
-
-    // Options/flags
-    if (t.startsWith('-')) continue;
-    // Variable references ($VAR, ${VAR})
-    if (t.startsWith('$')) continue;
-    // Tilde expansion (~/path) — the text from bash-parser is already expanded
-    // to /home/user/path? Actually no, bash-parser leaves it as "~/path".
-    // Let normalizePath handle it.
-
-    paths.push(t);
+    args.push((item as AstWord).text);
   }
 
-  return paths;
+  return filterPathArguments(cmd.name?.text, args, true);
 }
