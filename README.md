@@ -38,6 +38,21 @@ I do also run `pi` in a [Bubblewrap](https://github.com/containers/bubblewrap) s
 
 [Read more here](./docs/extensions/pi-gate.md).
 
+### subagent
+
+Delegate tasks to headless `pi --mode rpc` child processes with isolated
+context. Ships one bundled `worker` agent; drop `.md` agent definitions in
+`~/.pi/agent/agents/` (global) or `.pi/agents/` (project, wins on name
+collision) to add your own.
+
+The parent session is the RPC client, so anything that would prompt in the
+child — a `ctx.ui.confirm` from an extension like pi-gate, or the child's
+`contact_supervisor` tool — is relayed to your primary session for approval,
+and running subagents stream their most recent output line (80 cols) as
+live status.
+
+[Read more here](./docs/extensions/subagent.md).
+
 ## Themes
 
 I generated a couple of color themes based on popular open-source themes. I use a dark color background, usually with transparent background. I like a vibrant, bright color scheme with high contrast.

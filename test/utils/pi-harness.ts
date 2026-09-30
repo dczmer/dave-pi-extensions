@@ -20,7 +20,7 @@ export interface PiTestHarness {
     execute(args?: string, overrides?: Partial<ExtensionCommandContext>): Promise<ExtensionCommandContext>;
   };
   tool(name: string): {
-    execute(params: Record<string, unknown>): Promise<unknown>;
+    execute(params: Record<string, unknown>, overrides?: Partial<ExtensionCommandContext>): Promise<unknown>;
   };
   emitEvent(
     eventName: string,
@@ -100,8 +100,8 @@ export async function createPiTestHarness(
         throw new Error(`Tool "${name}" not registered on extension`);
       }
       return {
-        async execute(params: Record<string, unknown>) {
-          const ctx = createCommandContext({ cwd });
+        async execute(params: Record<string, unknown>, overrides?: Partial<ExtensionCommandContext>) {
+          const ctx = createCommandContext({ cwd, ...overrides });
           return registered.definition.execute('test-call-id', params, undefined, undefined, ctx);
         },
       };
