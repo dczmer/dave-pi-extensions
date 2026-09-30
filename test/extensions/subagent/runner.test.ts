@@ -5,7 +5,7 @@ import { readdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { PassThrough } from 'node:stream';
 import type { ChildProcess } from 'node:child_process';
-import { runSubagent, type SpawnFn } from '../../../extensions/subagent/runner.ts';
+import { runSubagent, type RunSubagentOptions, type SpawnFn } from '../../../extensions/subagent/runner.ts';
 import type { AgentConfig } from '../../../extensions/subagent/agents.ts';
 
 const testAgent: AgentConfig = {
@@ -19,6 +19,17 @@ const testAgent: AgentConfig = {
 /** Flush pending microtasks and synchronous stream emissions. */
 async function flush(): Promise<void> {
   for (let i = 0; i < 10; i++) await new Promise((r) => setImmediate(r));
+}
+
+/**
+ * Wait until the spawn callback has recorded a launch. Spawning is preceded
+ * by an async temp-file write (mkdtemp + realpath + writeFile), which a
+ * fixed flush is not always enough to cover.
+ */
+async function waitForSpawn(child: MockChild): Promise<void> {
+  for (let i = 0; i < 100 && child.spawned.length === 0; i++) {
+    await new Promise((r) => setTimeout(r, 10));
+  }
 }
 
 interface MockChild {
@@ -209,6 +220,86 @@ test('input dialog answered with undefined responds with cancelled:true', async 
   await promise;
 });
 
+test('dialogs from parallel children are serialized through the parent UI', async () => {
+  const childA = createMockChild();
+  const childB = createMockChild();
+  // Deferred editor promises: the harness controls when each dialog "answers".
+  const deferreds: Array<{ resolve: (value: string) => void }> = [];
+  const editor = mock.fn(
+    () =>
+      new Promise<string>((resolve) => {
+        deferreds.push({ resolve });
+      }),
+  );
+  const ui: RunSubagentOptions['ui'] = {
+    confirm: mock.fn(),
+    select: mock.fn(),
+    input: mock.fn(),
+    editor,
+    notify: mock.fn(),
+  };
+
+  const runA = runSubagent({ agent: testAgent, task: 'a', cwd: '/tmp', hasRelayUI: true, ui, spawnFn: childA.spawnFn });
+  const runB = runSubagent({ agent: testAgent, task: 'b', cwd: '/tmp', hasRelayUI: true, ui, spawnFn: childB.spawnFn });
+  await flush();
+  acceptPrompt(childA);
+  acceptPrompt(childB);
+
+  // Both children request an editor dialog concurrently.
+  childA.emitRecord({ type: 'extension_ui_request', id: 'a1', method: 'editor', title: 'A', prefill: 'a' });
+  childB.emitRecord({ type: 'extension_ui_request', id: 'b1', method: 'editor', title: 'B', prefill: 'b' });
+  await flush();
+
+  // Only one dialog reaches the parent UI at a time; the second queues.
+  strictEqual(editor.mock.calls.length, 1);
+
+  // Answering the first dialog unblocks the queued second dialog.
+  deferreds[0]!.resolve('answer-a');
+  await flush();
+  strictEqual(editor.mock.calls.length, 2);
+  deepStrictEqual(editor.mock.calls[1]!.arguments, ['B', 'b']);
+
+  // The first child's response carries its own request id.
+  const responseA = childA.stdinRecords().find((r) => r.type === 'extension_ui_response' && r.id === 'a1');
+  deepStrictEqual(responseA, { type: 'extension_ui_response', id: 'a1', value: 'answer-a' });
+
+  deferreds[1]!.resolve('answer-b');
+  await flush();
+  const responseB = childB.stdinRecords().find((r) => r.type === 'extension_ui_response' && r.id === 'b1');
+  deepStrictEqual(responseB, { type: 'extension_ui_response', id: 'b1', value: 'answer-b' });
+
+  childA.emitRecord({ type: 'agent_settled' });
+  childB.emitRecord({ type: 'agent_settled' });
+  await runA;
+  await runB;
+});
+
+test('a dialog whose parent UI never settles is auto-cancelled after the timeout', async () => {
+  const child = createMockChild();
+  // Simulates the TUI dropping the dialog: the promise never settles.
+  const editor = mock.fn(() => new Promise<string>(() => {}));
+  const promise = runSubagent({
+    agent: testAgent,
+    task: 'x',
+    cwd: '/tmp',
+    hasRelayUI: true,
+    dialogTimeoutMs: 40,
+    ui: { confirm: mock.fn(), select: mock.fn(), input: mock.fn(), editor, notify: mock.fn() },
+    spawnFn: child.spawnFn,
+  });
+  await flush();
+  acceptPrompt(child);
+
+  child.emitRecord({ type: 'extension_ui_request', id: 'u4', method: 'editor', title: 't', prefill: 'p' });
+  await new Promise((r) => setTimeout(r, 150));
+
+  const response = child.stdinRecords().find((r) => r.type === 'extension_ui_response' && r.id === 'u4');
+  deepStrictEqual(response, { type: 'extension_ui_response', id: 'u4', cancelled: true });
+
+  child.emitRecord({ type: 'agent_settled' });
+  await promise;
+});
+
 test('dialogs auto-cancel when the parent has no relay UI', async () => {
   const child = createMockChild();
   const confirm = mock.fn(async () => true);
@@ -340,6 +431,7 @@ test('temporary system-prompt file is removed after the run', async () => {
     spawnFn: child.spawnFn,
   });
   await flush();
+  await waitForSpawn(child);
 
   // The prompt file path must have been passed to the child.
   const { args } = child.spawned[0]!;

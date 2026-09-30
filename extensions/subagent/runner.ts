@@ -65,6 +65,14 @@ export interface RunSubagentOptions {
   ui?: Pick<ExtensionContext['ui'], 'confirm' | 'select' | 'input' | 'editor' | 'notify'> | undefined;
   /** When false, child dialogs are answered with an immediate cancellation. */
   hasRelayUI: boolean;
+  /**
+   * Maximum time a relayed dialog may wait for the parent UI before the child
+   * receives an automatic cancellation. Guards against the TUI silently
+   * dropping a dialog (whose promise then never settles), which would
+   * otherwise hang the child forever. Defaults to
+   * {@link DEFAULT_DIALOG_TIMEOUT_MS}.
+   */
+  dialogTimeoutMs?: number | undefined;
   onProgress?: (run: SubagentRun) => void;
   spawnFn?: SpawnFn;
 }
@@ -133,6 +141,73 @@ async function writePromptToTempFile(agentName: string, prompt: string): Promise
 
 type UiRelay = RunSubagentOptions['ui'];
 
+/** Default ceiling for {@link RunSubagentOptions.dialogTimeoutMs}: 10 minutes. */
+const DEFAULT_DIALOG_TIMEOUT_MS = 10 * 60 * 1000;
+
+/**
+ * Process-wide mutex serializing dialog relays to the parent TUI, shared
+ * across all module copies via globalThis (pi loads each extension with a
+ * separate jiti instance, so module-level state would NOT be shared).
+ */
+const RELAY_MUTEX_KEY = Symbol.for('pi-subagent:relay-mutex');
+
+interface RelayMutex {
+  tail: Promise<unknown>;
+}
+
+function getRelayMutex(): RelayMutex {
+  const g = globalThis as Record<symbol, RelayMutex | undefined>;
+  return (g[RELAY_MUTEX_KEY] ??= { tail: Promise.resolve() });
+}
+
+/**
+ * Run `fn` once every previously queued dialog relay has settled, and queue
+ * subsequent relays behind it. The parent TUI can only show one extension
+ * dialog at a time — a second concurrent dialog overwrites the first and
+ * orphans its promise — so relays from parallel children must be serialized
+ * rather than raced.
+ *
+ * @param fn - The dialog relay to run once the lock is acquired.
+ * @returns The result of `fn`.
+ */
+async function withRelayLock<T>(fn: () => Promise<T>): Promise<T> {
+  const mutex = getRelayMutex();
+  const result = mutex.tail.then(fn, fn);
+  mutex.tail = result.then(
+    () => undefined,
+    () => undefined,
+  );
+  return result;
+}
+
+/**
+ * Resolve with the dialog result, or `undefined` when the parent UI promise
+ * does not settle within `timeoutMs`. The TUI can silently drop extension
+ * dialogs (e.g. when another dialog replaces them), leaving their promise
+ * pending forever; the timeout guarantees the child always receives a
+ * response instead of hanging.
+ *
+ * @param promise - The parent UI dialog promise to bound.
+ * @param timeoutMs - Maximum wait before resolving `undefined`.
+ * @returns The settled value, or `undefined` on timeout/rejection.
+ */
+function withDialogTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T | undefined> {
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => resolve(undefined), timeoutMs);
+    timer.unref?.();
+    promise.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      () => {
+        clearTimeout(timer);
+        resolve(undefined);
+      },
+    );
+  });
+}
+
 /**
  * Relay one `extension_ui_request` from the child to the primary session's
  * UI and write the matching `extension_ui_response` back to the child.
@@ -140,13 +215,17 @@ type UiRelay = RunSubagentOptions['ui'];
  * Dialog methods (`confirm`/`select`/`input`/`editor`) block the child until
  * answered; fire-and-forget methods are forwarded (`notify`) or ignored.
  * Without a relay-capable UI, dialogs are cancelled immediately so children
- * never hang.
+ * never hang. Dialogs are serialized process-wide (the parent TUI shows one
+ * dialog at a time) and bounded by `dialogTimeoutMs`, so every child always
+ * receives exactly one response — a lost or displaced dialog yields an
+ * automatic cancellation instead of a hung child.
  */
 async function relayDialog(
   record: Record<string, unknown>,
   ui: UiRelay,
   hasRelayUI: boolean,
   writeRecord: (record: Record<string, unknown>) => void,
+  dialogTimeoutMs: number,
 ): Promise<void> {
   const id = record.id;
   const method = typeof record.method === 'string' ? record.method : '';
@@ -158,36 +237,55 @@ async function relayDialog(
     return;
   }
 
+  let responded = false;
+  const respondOnce = (fields: Record<string, unknown>) => {
+    if (responded) return;
+    responded = true;
+    respond(fields);
+  };
+
   try {
     switch (method) {
       case 'confirm': {
-        const confirmed = await ui.confirm(String(record.title ?? ''), String(record.message ?? ''));
-        respond({ confirmed });
+        const confirmed = await withRelayLock(() =>
+          withDialogTimeout(ui.confirm!(String(record.title ?? ''), String(record.message ?? '')), dialogTimeoutMs),
+        );
+        if (confirmed === undefined) respondOnce({ cancelled: true });
+        else respondOnce({ confirmed });
         break;
       }
       case 'select': {
         const options = Array.isArray(record.options) ? record.options.map(String) : [];
-        const value = await ui.select(String(record.title ?? ''), options);
-        if (value === undefined) respond({ cancelled: true });
-        else respond({ value });
+        const value = await withRelayLock(() =>
+          withDialogTimeout(ui.select!(String(record.title ?? ''), options), dialogTimeoutMs),
+        );
+        if (value === undefined) respondOnce({ cancelled: true });
+        else respondOnce({ value });
         break;
       }
       case 'input': {
-        const value = await ui.input(
-          String(record.title ?? ''),
-          record.placeholder === undefined ? undefined : String(record.placeholder),
+        const value = await withRelayLock(() =>
+          withDialogTimeout(
+            ui.input!(
+              String(record.title ?? ''),
+              record.placeholder === undefined ? undefined : String(record.placeholder),
+            ),
+            dialogTimeoutMs,
+          ),
         );
-        if (value === undefined) respond({ cancelled: true });
-        else respond({ value });
+        if (value === undefined) respondOnce({ cancelled: true });
+        else respondOnce({ value });
         break;
       }
       case 'editor': {
-        const value = await ui.editor(
-          String(record.title ?? ''),
-          record.prefill === undefined ? undefined : String(record.prefill),
+        const value = await withRelayLock(() =>
+          withDialogTimeout(
+            ui.editor!(String(record.title ?? ''), record.prefill === undefined ? undefined : String(record.prefill)),
+            dialogTimeoutMs,
+          ),
         );
-        if (value === undefined) respond({ cancelled: true });
-        else respond({ value });
+        if (value === undefined) respondOnce({ cancelled: true });
+        else respondOnce({ value });
         break;
       }
       case 'notify': {
@@ -203,7 +301,7 @@ async function relayDialog(
     }
   } catch {
     // A relay failure must never wedge the child waiting on a response.
-    if (isDialog) respond({ cancelled: true });
+    if (isDialog) respondOnce({ cancelled: true });
   }
 }
 
@@ -330,7 +428,15 @@ function driveChild(proc: ChildProcess, run: SubagentRun, opts: RunSubagentOptio
 
       if (record.type === 'extension_ui_request') {
         // Dialog handling is async; the read loop must not block on it.
-        void relayDialog(record, opts.ui, opts.hasRelayUI, writeRecord);
+        // Dialogs serialize process-wide inside relayDialog so parallel
+        // children never race the single parent-TUI dialog slot.
+        void relayDialog(
+          record,
+          opts.ui,
+          opts.hasRelayUI,
+          writeRecord,
+          opts.dialogTimeoutMs ?? DEFAULT_DIALOG_TIMEOUT_MS,
+        );
         return;
       }
 

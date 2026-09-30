@@ -93,6 +93,7 @@ export function createSubagentExtension(env: NodeJS.ProcessEnv) {
         'Delegate tasks to specialized subagents running in headless pi child processes with isolated context.',
         'Modes: single (agent + task) or parallel (tasks array, one process per task, all concurrent).',
         'Agents are .md files with frontmatter discovered from this extension (bundled), ~/.pi/agent/agents (user), and .pi/agents (project; wins on name collision).',
+        'The bundled agent "worker" (general-purpose, full capabilities) is always available under the default agentScope; use it unless a task calls for a specialized agent.',
         'Approvals requested inside a child are relayed to this session; a blocked child can ask you a question via its contact_supervisor tool.',
       ].join(' '),
       parameters: SubagentParams,
