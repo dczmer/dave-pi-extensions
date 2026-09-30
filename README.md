@@ -53,6 +53,18 @@ live status.
 
 [Read more here](./docs/extensions/subagent.md).
 
+### question
+
+Ask the user a single multiple-choice question with an always-available
+free-form escape hatch. It renders a title, an optional description, and a
+menu of options, then blocks until you pick one (or the user types their own
+answer).
+
+It runs sequentially and requires an interactive TUI session; a cancelled
+answer is returned (not an error) so you can proceed or re-ask.
+
+[Read more here](./docs/extensions/question.md).
+
 ## Themes
 
 I generated a couple of color themes based on popular open-source themes. I use a dark color background, usually with transparent background. I like a vibrant, bright color scheme with high contrast.
