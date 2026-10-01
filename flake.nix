@@ -25,6 +25,7 @@
               pkgs.perl
               pkgs.python3
               pkgs.fd
+              pkgs.nodejs
             ];
             shellHook = ''
 
