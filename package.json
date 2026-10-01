@@ -4,6 +4,9 @@
   "keywords": [
     "pi-package"
   ],
+  "bin": {
+    "pi-sessions": "./bin/pi-sessions.ts"
+  },
   "pi": {
     "extensions": [
       "./extensions"

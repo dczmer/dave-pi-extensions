@@ -22,5 +22,5 @@
       "bash-parser": ["./src/bash-parser.d.ts"]
     }
   },
-  "include": ["extensions/**/*.ts", "test/**/*.ts", "src/**/*.ts"]
+  "include": ["extensions/**/*.ts", "test/**/*.ts", "src/**/*.ts", "bin/**/*.ts"]
 }
