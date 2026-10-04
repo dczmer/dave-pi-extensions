@@ -13,6 +13,9 @@ rule "MD004", :style => :sublist
 # long URLs and fenced code snippets that are better left unwrapped.
 exclude_rule "MD013"
 
+# Allow inline HTML (e.g., color swatch spans in the theme palette tables).
+exclude_rule "MD033"
+
 # Allow multiple top-level headers in the same document (e.g., per-section H1s).
 exclude_rule "MD025"
 

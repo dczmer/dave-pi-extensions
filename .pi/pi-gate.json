@@ -9,7 +9,9 @@
     "npx tsx *",
     "npx eslint*",
     "mdl*",
-    "python3 *"
+    "python3 *",
+    "nix develop -c *",
+    "npx *"
   ],
   "externalAllow": [
     "/nix*"
