@@ -12,6 +12,7 @@ import { Type } from 'typebox';
 import { discoverAgents, resolveAgentDirs, type AgentConfig, type AgentScope } from './agents.ts';
 import { renderSubagentCall, renderSubagentResult, type SubagentCallArgs, type SubagentDetails } from './render.ts';
 import { getFinalOutput, isFailedRun, runSubagent, type RunSubagentOptions, type SubagentRun } from './runner.ts';
+import { appendDelegationRules } from './delegation-rules.ts';
 
 /** Maximum number of tasks accepted in one parallel call. */
 export const MAX_PARALLEL_TASKS = 8;
@@ -85,6 +86,13 @@ export function createSubagentExtension(env: NodeJS.ProcessEnv) {
     // Inside a spawned child, only the companion extension's tools are
     // wanted; never allow a subagent to spawn its own subagents.
     if (env.PI_SUBAGENT_CHILD) return;
+
+    // Teach the primary session when and how to delegate. Children never
+    // reach this registration (guard above), so child sessions stay free
+    // of rules for a tool they cannot call.
+    pi.on('before_agent_start', (event) => ({
+      systemPrompt: appendDelegationRules(event.systemPrompt),
+    }));
 
     pi.registerTool<typeof SubagentParams, SubagentDetails>({
       name: 'subagent',
