@@ -10,7 +10,13 @@ import {
 } from '@earendil-works/pi-coding-agent';
 import { Container, Markdown, Spacer, Text, type Component } from '@earendil-works/pi-tui';
 import type { AgentScope } from './agents.ts';
+import { formatToolCall, getDisplayItems, type DisplayItem } from './display-items.ts';
 import { getFinalOutput, isFailedRun, type SubagentRun } from './runner.ts';
+
+/** Items shown per run in the collapsed single-run view. */
+export const COLLAPSED_ITEM_COUNT = 5;
+/** Items shown per run in the collapsed parallel view (keeps N runs on screen). */
+export const PARALLEL_COLLAPSED_ITEM_COUNT = 3;
 
 /** Tool result details shared between the tool implementation and renderers. */
 export interface SubagentDetails {
@@ -79,17 +85,45 @@ function runIcon(run: SubagentRun, theme: Theme): string {
   return isFailedRun(run) ? theme.fg('error', '✗') : theme.fg('success', '✓');
 }
 
-/** One-line summary of a run: icon, agent name, live status or error. */
-function collapsedRunLine(run: SubagentRun, theme: Theme): string {
-  let line = `${runIcon(run, theme)} ${theme.fg('toolTitle', theme.bold(run.agent))}`;
+/**
+ * Collapsed per-run block: header, trailing display items, live status line.
+ *
+ * While the run is live, `run.messages` only contains *completed* messages,
+ * so the in-flight assistant text appears via `run.statusLine` as the last
+ * line; once settled, the status line is dropped in favor of the items.
+ */
+function collapsedRunBlock(run: SubagentRun, theme: Theme, itemCount: number): string {
+  let text = `${runIcon(run, theme)} ${theme.fg('toolTitle', theme.bold(run.agent))}`;
+  const items = getDisplayItems(run.messages);
   if (run.exitCode === null) {
-    line += `\n  ${theme.fg('dim', run.statusLine || '(starting...)')}`;
+    if (items.length > 0) text += `\n${renderDisplayItems(items, itemCount - 1, theme, 2)}`;
+    text += `\n  ${theme.fg('dim', run.statusLine || '(starting...)')}`;
   } else if (isFailedRun(run)) {
-    line += `\n  ${theme.fg('error', run.errorMessage ?? run.statusLine ?? 'failed')}`;
+    if (items.length > 0) text += `\n${renderDisplayItems(items, itemCount - 1, theme, 2)}`;
+    text += `\n  ${theme.fg('error', run.errorMessage ?? run.statusLine ?? 'failed')}`;
   } else {
-    line += `\n  ${theme.fg('toolOutput', run.statusLine || '(done)')}`;
+    text +=
+      items.length > 0 ? `\n${renderDisplayItems(items, itemCount, theme)}` : `\n  ${theme.fg('muted', '(no output)')}`;
+    if (items.length > itemCount) text += `\n  ${theme.fg('muted', '(Ctrl+O to expand)')}`;
   }
-  return line;
+  return text;
+}
+
+/** Render up to `limit` trailing display items as indented lines, with an elision note. */
+function renderDisplayItems(items: DisplayItem[], limit: number, theme: Theme, linesPerText = 3): string {
+  const toShow = items.slice(-limit);
+  const skipped = items.length - toShow.length;
+  let text = '';
+  if (skipped > 0) text += `  ${theme.fg('muted', `... ${skipped} earlier items`)}\n`;
+  for (const item of toShow) {
+    if (item.type === 'text') {
+      const preview = item.text.split('\n').slice(0, linesPerText).join('\n');
+      text += `  ${theme.fg('toolOutput', preview)}\n`;
+    } else {
+      text += `  ${theme.fg('muted', '→ ') + formatToolCall(item.name, item.args, theme)}\n`;
+    }
+  }
+  return text.trimEnd();
 }
 
 function aggregateUsage(results: SubagentRun[]): SubagentRun['usage'] {
@@ -106,7 +140,7 @@ function aggregateUsage(results: SubagentRun[]): SubagentRun['usage'] {
   return total;
 }
 
-/** Expanded per-run section: header, task, final output as markdown, usage. */
+/** Expanded per-run section: header, task, full trajectory, final output as markdown, usage. */
 function expandedRunSection(container: Container, run: SubagentRun, theme: Theme): void {
   const mdTheme = getMarkdownTheme();
   container.addChild(new Spacer(1));
@@ -115,9 +149,22 @@ function expandedRunSection(container: Container, run: SubagentRun, theme: Theme
   if (isFailedRun(run) && run.errorMessage) {
     container.addChild(new Text(theme.fg('error', `Error: ${run.errorMessage}`), 0, 0));
   }
-  const output = getFinalOutput(run.messages).trim();
-  if (output) {
+  const items = getDisplayItems(run.messages);
+  if (items.length > 0) {
     container.addChild(new Spacer(1));
+    container.addChild(new Text(theme.fg('muted', '─── Trajectory ───'), 0, 0));
+    for (const item of items) {
+      if (item.type === 'toolCall') {
+        container.addChild(new Text(theme.fg('muted', '→ ') + formatToolCall(item.name, item.args, theme), 0, 0));
+      } else {
+        container.addChild(new Text(theme.fg('toolOutput', item.text), 0, 0));
+      }
+    }
+  }
+  const output = getFinalOutput(run.messages).trim();
+  container.addChild(new Spacer(1));
+  container.addChild(new Text(theme.fg('muted', '─── Output ───'), 0, 0));
+  if (output) {
     container.addChild(new Markdown(output, 0, 0, mdTheme));
   } else {
     container.addChild(new Text(theme.fg('muted', '(no output)'), 0, 0));
@@ -169,7 +216,7 @@ export function renderSubagentResult(
       : failed > 0 ? theme.fg('warning', '◐')
       : theme.fg('success', '✓');
     let text = `${icon} ${theme.fg('toolTitle', theme.bold('parallel '))}${theme.fg('accent', `${done}/${details.results.length} done`)}`;
-    for (const run of details.results) text += `\n${collapsedRunLine(run, theme)}`;
+    for (const run of details.results) text += `\n${collapsedRunBlock(run, theme, PARALLEL_COLLAPSED_ITEM_COUNT)}`;
     if (running === 0) {
       const totalStr = formatUsageStats(aggregateUsage(details.results));
       if (totalStr) text += `\n${theme.fg('dim', `Total: ${totalStr}`)}`;
@@ -178,7 +225,7 @@ export function renderSubagentResult(
   }
 
   const run = details.results[0]!;
-  let text = collapsedRunLine(run, theme);
+  let text = collapsedRunBlock(run, theme, COLLAPSED_ITEM_COUNT);
   if (run.exitCode !== null) {
     const usageStr = formatUsageStats(run.usage);
     if (usageStr) text += `\n${theme.fg('dim', usageStr)}`;
