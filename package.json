@@ -27,7 +27,7 @@
     "@earendil-works/pi-tui": "^0.85.1"
   },
   "scripts": {
-    "test": "node --test test/**/*.test.ts",
+    "test": "node --test \"test/**/*.test.ts\"",
     "typecheck": "tsc --noEmit",
     "format": "prettier --write .",
     "format:check": "prettier --check ."

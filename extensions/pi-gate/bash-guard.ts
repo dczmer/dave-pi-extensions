@@ -12,7 +12,7 @@ import type {
 } from '../../src/bash-parser.ts';
 import type { ConfigResult } from './config.ts';
 import { saveConfig } from './config.ts';
-import { getSessionState, approveBashPattern, isBashEnabled } from './session.ts';
+import { getApprovedBashPatterns, approveBashPattern, isBashEnabled } from './session.ts';
 import { matchesGlob } from './matcher.ts';
 import { extractPathsFromCommand } from './guards.ts';
 import { checkFileAccess } from './file-access.ts';
@@ -157,8 +157,7 @@ async function checkSingleCommand(
   cmdNode?: AstCommand,
 ): Promise<boolean> {
   const config = configResult.merged;
-  const sessionState = getSessionState();
-  const allPatterns = [...config.bashAllow, ...sessionState.approvedBashPatterns];
+  const allPatterns = [...config.bashAllow, ...getApprovedBashPatterns()];
   // When the bash guard is toggled off, treat every command as matched; file
   // paths inside the command are still checked by the external-path guard.
   const hasMatch = !isBashEnabled() || allPatterns.some((p) => matchesGlob(command, p));

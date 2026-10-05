@@ -1,6 +1,6 @@
 import type { AssistantMessage, Context, Model, ModelsApiStreamOptions } from '@earendil-works/pi-ai';
 import type { ConfigResult } from './config.ts';
-import { getSessionState } from './session.ts';
+import { getApprovedBashPatterns, getApprovedExternalPatterns } from './session.ts';
 import type { ExtensionContext } from './prompts.ts';
 
 /**
@@ -312,7 +312,6 @@ export async function judgeBashCommand(
     };
   }
 
-  const sessionState = getSessionState();
   const prompt = buildJudgePrompt({
     command,
     cwd,
@@ -320,8 +319,8 @@ export async function judgeBashCommand(
     projectPath: configResult.projectPath,
     globalConfig: configResult.global,
     projectConfig: configResult.project,
-    sessionBashAllow: [...sessionState.approvedBashPatterns],
-    sessionExternalAllow: [...sessionState.approvedExternalPatterns],
+    sessionBashAllow: [...getApprovedBashPatterns()],
+    sessionExternalAllow: [...getApprovedExternalPatterns()],
   });
 
   const complete = deps.complete ?? ((model, context, options) => ctx.modelRegistry.complete(model, context, options));

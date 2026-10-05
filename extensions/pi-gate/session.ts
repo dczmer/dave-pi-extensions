@@ -1,5 +1,6 @@
 import { matchesGlob } from './matcher.ts';
 import type { ConfigResult } from './config.ts';
+import { getSharedView, persistRecord, setStateLogOverride } from './state-log.ts';
 
 /** Per-session approvals and guard toggles; everything expires when pi exits. */
 export interface SessionState {
@@ -35,11 +36,13 @@ export function getSessionState(): SessionState {
 /** Mark an external path pattern as approved for the current session. */
 export function approveExternalPattern(pattern: string): void {
   getSessionState().approvedExternalPatterns.add(pattern);
+  persistRecord({ op: 'approve-external', pattern });
 }
 
 /** Mark a bash glob pattern as approved for the current session. */
 export function approveBashPattern(pattern: string): void {
   getSessionState().approvedBashPatterns.add(pattern);
+  persistRecord({ op: 'approve-bash', pattern });
 }
 
 /**
@@ -48,12 +51,15 @@ export function approveBashPattern(pattern: string): void {
  * file paths inside commands are still checked by the external-path guard.
  */
 export function isBashEnabled(): boolean {
-  return getSessionState().bashEnabled;
+  // The shared log is the global latest (every toggle is persisted); fall
+  // back to the local singleton when the log is inactive or has no toggle yet.
+  return getSharedView().bashEnabled ?? getSessionState().bashEnabled;
 }
 
 /** Enable or disable the bash command-pattern guard for this session. */
 export function setBashEnabled(enabled: boolean): void {
   getSessionState().bashEnabled = enabled;
+  persistRecord({ op: 'toggle', guard: 'bash', enabled });
 }
 
 /**
@@ -62,12 +68,13 @@ export function setBashEnabled(enabled: boolean): void {
  * referenced inside bash commands.
  */
 export function isExternalEnabled(): boolean {
-  return getSessionState().externalEnabled;
+  return getSharedView().externalEnabled ?? getSessionState().externalEnabled;
 }
 
 /** Enable or disable the external file-path guard for this session. */
 export function setExternalEnabled(enabled: boolean): void {
   getSessionState().externalEnabled = enabled;
+  persistRecord({ op: 'toggle', guard: 'external', enabled });
 }
 
 /** Mark pi-gate as loaded in this process (called once by the extension entry point). */
@@ -100,6 +107,16 @@ export function getConfigResultOverride(): ConfigResult | undefined {
   return (globalThis as Record<symbol, ConfigResult | undefined>)[CONFIG_OVERRIDE_KEY];
 }
 
+/** All approved bash patterns: local session ∪ shared log. Refreshes from the log. */
+export function getApprovedBashPatterns(): Set<string> {
+  return new Set([...getSessionState().approvedBashPatterns, ...getSharedView().bash]);
+}
+
+/** All approved external path patterns: local session ∪ shared log. Refreshes from the log. */
+export function getApprovedExternalPatterns(): Set<string> {
+  return new Set([...getSessionState().approvedExternalPatterns, ...getSharedView().external]);
+}
+
 /**
  * Check whether an external path has been approved during this session.
  *
@@ -112,7 +129,7 @@ export function getConfigResultOverride(): ConfigResult | undefined {
  * excepted).
  */
 export function isExternalApproved(path: string): boolean {
-  for (const rawEntry of getSessionState().approvedExternalPatterns) {
+  for (const rawEntry of getApprovedExternalPatterns()) {
     const entry = rawEntry.length > 1 ? rawEntry.replace(/\/+$/, '') : rawEntry;
     if (entry === path) return true;
     if (path.startsWith(entry + '/')) return true;
@@ -125,7 +142,7 @@ export function isExternalApproved(path: string): boolean {
  * Check whether a bash command matches any session-approved glob pattern.
  */
 export function isBashPatternApproved(command: string): boolean {
-  for (const pattern of getSessionState().approvedBashPatterns) {
+  for (const pattern of getApprovedBashPatterns()) {
     if (matchesGlob(command, pattern)) return true;
   }
   return false;
@@ -138,4 +155,5 @@ export function resetSessionState(): void {
   state.approvedBashPatterns.clear();
   state.bashEnabled = true;
   state.externalEnabled = true;
+  setStateLogOverride(undefined); // drop handle + cached view
 }

@@ -13,6 +13,7 @@ import {
   isExternalEnabled,
   setConfigResultOverride,
 } from '../../../extensions/pi-gate/session.ts';
+import { setStateLogOverride } from '../../../extensions/pi-gate/state-log.ts';
 import { createConfigResult } from './utils/config.ts';
 
 const fakeJudgeModel = { provider: 'p', id: 'm' } as unknown as Model<any>;
@@ -251,6 +252,7 @@ test('/pi-gate-external still gates bash command patterns', async () => {
 test('session_start with reason "new" re-enables both guards', async () => {
   await withTempDir('pi-gate-', async (dir) => {
     resetSessionState();
+    setStateLogOverride(join(dir, 'state.jsonl')); // keep shared state inside the temp dir
     mkdirSync(join(dir, '.pi'), { recursive: true });
     const harness = await createPiTestHarness(piGateExtension, dir);
 
@@ -270,6 +272,7 @@ test('session_start with reason "new" re-enables both guards', async () => {
 test('session_start with other reasons does not re-enable guards', async () => {
   await withTempDir('pi-gate-', async (dir) => {
     resetSessionState();
+    setStateLogOverride(join(dir, 'state.jsonl')); // keep shared state inside the temp dir
     mkdirSync(join(dir, '.pi'), { recursive: true });
     const harness = await createPiTestHarness(piGateExtension, dir);
 

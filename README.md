@@ -51,6 +51,7 @@ I made my own, and I stripped it down to work the way I like, based on a simple 
 - Approval flow: approve an exact command/path once for the session, edit it into a broader glob pattern, and optionally save the pattern to the global or project config.
 - LLM judge: commands that defeat the bash parser (heredocs, exotic quoting) can be vetted by a configurable verification model that returns a YES/NO verdict, with a manual-approval fallback when it is unset, errors, times out, or returns an ambiguous verdict. Verdicts are recorded as expandable `pi-gate-verdict` transcript entries.
 - Session toggles: `/pi-gate-bash` and `/pi-gate-external` flip each guard independently for the current session (both re-enable on `/new`).
+- Shared session state: session approvals and guard toggles are shared between the main agent, subagent children, and sibling `pi` sessions in the same project via an append-only log at `$TMPDIR/pi-gate-<hash>/state.jsonl`, so a subagent never re-prompts for something you already approved. The log is reaped once the session that created it has exited — approvals never outlive the session tree.
 
 **Configuration:** two JSON files whose allow-lists are simply joined into one effective white-list (no override logic):
 

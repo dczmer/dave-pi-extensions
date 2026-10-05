@@ -5,6 +5,7 @@ import { checkFileAccess } from './file-access.ts';
 import { runPiGateBashCommand, runPiGateExternalCommand } from './command.ts';
 import { registerVerdictRenderer, logJudgeOutcome } from './log.ts';
 import { markPiGateLoaded, setBashEnabled, setExternalEnabled, getConfigResultOverride } from './session.ts';
+import { initSharedState } from './state-log.ts';
 
 /**
  * pi-gate extension: permissive-by-default file & bash access gate.
@@ -17,6 +18,12 @@ import { markPiGateLoaded, setBashEnabled, setExternalEnabled, getConfigResultOv
  * Registers `/pi-gate-bash` and `/pi-gate-external` to toggle the bash and
  * external-path guards independently for the current session (both default
  * to on). Starting a new session (`/new`) re-enables both guards.
+ *
+ * Session approvals and guard toggles are shared across the main agent,
+ * subagent children, and sibling pi sessions in the same project via an
+ * append-only JSONL log at `$TMPDIR/pi-gate-<hash>/state.jsonl`. The log
+ * expires (is truncated on next init) when the last session that created it
+ * has exited, so approvals never outlive the session tree.
  */
 export default function (pi: ExtensionAPI) {
   markPiGateLoaded();
@@ -25,7 +32,8 @@ export default function (pi: ExtensionAPI) {
   // Session state survives in the process across `/new` (pi reloads the
   // extension but globalThis persists), so explicitly re-enable both
   // guards when the user starts a fresh session.
-  pi.on('session_start', async (event) => {
+  pi.on('session_start', async (event, ctx) => {
+    initSharedState(ctx.cwd);
     if (event.reason !== 'new') return;
     setBashEnabled(true);
     setExternalEnabled(true);

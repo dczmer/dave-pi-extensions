@@ -1,8 +1,14 @@
 import { strictEqual } from 'node:assert';
+import { appendFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { test } from 'node:test';
+import { withTempDir } from '../../../test/utils/temp-dir.ts';
+import { setStateLogOverride, initSharedState, isSharedStateActive } from '../../../extensions/pi-gate/state-log.ts';
 import {
   approveExternalPattern,
   approveBashPattern,
+  getApprovedBashPatterns,
+  getApprovedExternalPatterns,
   getSessionState,
   isExternalApproved,
   isBashPatternApproved,
@@ -181,3 +187,105 @@ test('session state singleton is shared via globalThis across getSessionState ca
   strictEqual(isBashPatternApproved('shared-anything'), true);
   resetSessionState();
 });
+
+test('resetSessionState drops the shared-log handle and override', () =>
+  withTempDir('pi-gate-', (dir) => {
+    resetSessionState();
+    setStateLogOverride(join(dir, 'state.jsonl'));
+    initSharedState(dir);
+    strictEqual(isSharedStateActive(), true);
+
+    resetSessionState();
+
+    strictEqual(isSharedStateActive(), false);
+  }));
+
+test('approval write-through: shared log approves for a fresh handle', () =>
+  withTempDir('pi-gate-', (dir) => {
+    resetSessionState();
+    const file = join(dir, 'state.jsonl');
+    setStateLogOverride(file);
+    initSharedState(dir);
+
+    approveExternalPattern('/shared/dir');
+    approveBashPattern('npm run *');
+    strictEqual(isExternalApproved('/shared/dir'), true);
+
+    // Fresh handle (subagent child) sees the approvals.
+    setStateLogOverride(undefined);
+    setStateLogOverride(file);
+    initSharedState(dir);
+    strictEqual(isExternalApproved('/shared/dir/sub/file.txt'), true);
+    strictEqual(isBashPatternApproved('npm run build'), true);
+    strictEqual(getApprovedExternalPatterns().has('/shared/dir'), true);
+    strictEqual(getApprovedBashPatterns().has('npm run *'), true);
+    resetSessionState();
+  }));
+
+test('toggle write-through: a fresh handle sees the guard disabled', () =>
+  withTempDir('pi-gate-', (dir) => {
+    resetSessionState();
+    const file = join(dir, 'state.jsonl');
+    setStateLogOverride(file);
+    initSharedState(dir);
+
+    setBashEnabled(false);
+    setExternalEnabled(false);
+
+    setStateLogOverride(undefined);
+    setStateLogOverride(file);
+    initSharedState(dir);
+    strictEqual(isBashEnabled(), false);
+    strictEqual(isExternalEnabled(), false);
+    resetSessionState();
+  }));
+
+test('local approvals merge with shared-log approvals in the getters', () =>
+  withTempDir('pi-gate-', (dir) => {
+    resetSessionState();
+    const file = join(dir, 'state.jsonl');
+    setStateLogOverride(file);
+    initSharedState(dir);
+
+    approveBashPattern('local *');
+    // Simulate a sibling process writing to the log directly.
+    appendFileSync(
+      file,
+      JSON.stringify({ v: 1, op: 'approve-bash', ts: Date.now(), pid: 123456, pattern: 'shared *' }) + '\n',
+    );
+
+    strictEqual(isBashPatternApproved('local x'), true);
+    strictEqual(isBashPatternApproved('shared x'), true);
+    resetSessionState();
+  }));
+
+test('/new semantics: approvals persist while toggles re-enable write-through', () =>
+  withTempDir('pi-gate-', (dir) => {
+    resetSessionState();
+    const file = join(dir, 'state.jsonl');
+    setStateLogOverride(file);
+    initSharedState(dir);
+
+    approveBashPattern('persist *');
+    setBashEnabled(false);
+    setExternalEnabled(false);
+
+    // /new: drop in-process state, then re-enable both guards.
+    resetSessionState();
+    setStateLogOverride(file);
+    initSharedState(dir);
+    setBashEnabled(true);
+    setExternalEnabled(true);
+
+    // Approvals survived; toggles read back enabled even from a fresh handle.
+    strictEqual(isBashPatternApproved('persist x'), true);
+    strictEqual(isBashEnabled(), true);
+    strictEqual(isExternalEnabled(), true);
+    setStateLogOverride(undefined);
+    setStateLogOverride(file);
+    initSharedState(dir);
+    strictEqual(isBashEnabled(), true);
+    strictEqual(isExternalEnabled(), true);
+    strictEqual(isBashPatternApproved('persist x'), true);
+    resetSessionState();
+  }));
