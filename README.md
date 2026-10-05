@@ -134,11 +134,13 @@ live status.
 - Three-tier discovery with precedence **project > user > bundled**: the bundled `worker`, `~/.pi/agent/agents/`, and the nearest `.pi/agents/` walking up from the session cwd.
 - Approval relay: child dialogs (`confirm`, `select`, `input`, `editor`) arrive in the primary session as ordinary pi dialogs and queue one at a time; `contact_supervisor` lets a blocked child ask a free-form question.
 - Project-sourced agents in untrusted projects require a one-shot confirmation before spawning (fails closed when no UI is available).
-- Live progress: the collapsed tool result streams the child's most recent output line and the footer shows a `subagent` status entry.
+- Live progress: while any run is live, a below-editor fleet widget lists every active run and the footer shows a `subagent` status entry. The collapsed tool result streams the last few tool calls and text lines per run; Ctrl+O expands to the full trajectory (tool calls + assistant text).
 - Model selection: the agent's `model` frontmatter wins; otherwise the child inherits the parent session's model and thinking level.
 - Children never get the `subagent` tool themselves — no nesting.
 
 **Configuration:** none beyond the agent definition files described above. Tunables are constants in `extensions/subagent/index.ts` (`MAX_PARALLEL_TASKS = 8`, `MAX_CONCURRENCY = 4`, `PER_TASK_OUTPUT_CAP = 50 KiB`). Scope of agent discovery can be restricted per tool call with the `agentScope` parameter (`user` | `project` | `both`).
+
+Child sessions persist under `~/.pi/agent/subagent-runs/` (override with the `PI_SUBAGENT_RUNS_DIR` env var); run directories older than 7 days are swept on extension load. The expanded tool result shows each child's session file path — resume any child with `pi --resume <path>`.
 
 ## Themes
 

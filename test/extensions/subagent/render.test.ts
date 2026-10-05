@@ -141,3 +141,15 @@ test('expanded parallel renders aggregate usage total', () => {
   ok(text.includes('2/2 done'));
   ok(text.includes('Total: 4 turns'));
 });
+
+test('collapsed finished run shows the persisted session file path', () => {
+  const run = makeRun({ sessionFile: '/home/u/.pi/agent/subagent-runs/x/s.jsonl' });
+  const text = render({ mode: 'single', agentScope: 'both', results: [run] }, false);
+  ok(text.includes('session: /home/u/.pi/agent/subagent-runs/x/s.jsonl'));
+});
+
+test('expanded run shows the persisted session file path', () => {
+  const run = makeRun({ sessionFile: '/home/u/.pi/agent/subagent-runs/x/s.jsonl' });
+  const text = render({ mode: 'single', agentScope: 'both', results: [run] }, true);
+  ok(text.includes('Session: /home/u/.pi/agent/subagent-runs/x/s.jsonl'));
+});

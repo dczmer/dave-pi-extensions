@@ -418,6 +418,77 @@ test('process close without agent_settled resolves the run; non-zero exit is an 
   ok(run.errorMessage?.includes('panic'));
 });
 
+test('sessionDir switches the child to --session-dir and captures the session file via RPC', async () => {
+  const child = createMockChild();
+  const promise = runSubagent({
+    agent: testAgent,
+    task: 'x',
+    cwd: '/tmp',
+    hasRelayUI: false,
+    sessionDir: '/tmp/runs/run-1',
+    spawnFn: child.spawnFn,
+  });
+  await flush();
+
+  const { args } = child.spawned[0]!;
+  ok(args.includes('--session-dir'));
+  strictEqual(args[args.indexOf('--session-dir') + 1], '/tmp/runs/run-1');
+  ok(!args.includes('--no-session'));
+
+  acceptPrompt(child);
+  child.emitRecord({ type: 'agent_settled' });
+  await flush();
+
+  // After settle the child is asked for its session stats before shutdown.
+  const stats = child.stdinRecords().find((r) => r.type === 'get_session_stats');
+  ok(stats, 'expected a get_session_stats command on stdin');
+  strictEqual(stats.id, 'stats-1');
+
+  child.emitRecord({
+    type: 'response',
+    id: 'stats-1',
+    command: 'get_session_stats',
+    success: true,
+    data: { sessionFile: '/tmp/runs/run-1/group/session.jsonl' },
+  });
+  const run = await promise;
+  strictEqual(run.sessionFile, '/tmp/runs/run-1/group/session.jsonl');
+  strictEqual(run.exitCode, 0);
+});
+
+test('stats timeout: run finishes without a session path when the child never answers', async () => {
+  const child = createMockChild();
+  const promise = runSubagent({
+    agent: testAgent,
+    task: 'x',
+    cwd: '/tmp',
+    hasRelayUI: false,
+    sessionDir: '/tmp/runs/run-2',
+    statsTimeoutMs: 40,
+    spawnFn: child.spawnFn,
+  });
+  await flush();
+  acceptPrompt(child);
+  child.emitRecord({ type: 'agent_settled' });
+
+  const run = await promise;
+  strictEqual(run.exitCode, 0);
+  strictEqual(run.sessionFile, undefined);
+  ok(child.stdinRecords().some((r) => r.type === 'get_session_stats'));
+});
+
+test('sessionDir unset keeps --no-session and skips the stats roundtrip', async () => {
+  const child = createMockChild();
+  const promise = runSubagent({ agent: testAgent, task: 'x', cwd: '/tmp', hasRelayUI: false, spawnFn: child.spawnFn });
+  await flush();
+  acceptPrompt(child);
+  child.emitRecord({ type: 'agent_settled' });
+  const run = await promise;
+  ok(child.spawned[0]!.args.includes('--no-session'));
+  ok(!child.stdinRecords().some((r) => r.type === 'get_session_stats'));
+  strictEqual(run.sessionFile, undefined);
+});
+
 test('temporary system-prompt file is removed after the run', async () => {
   const promptAgent: AgentConfig = { ...testAgent, systemPrompt: 'You are a test agent.' };
   const before = readdirSync(tmpdir()).filter((d) => d.startsWith('pi-subagent-'));

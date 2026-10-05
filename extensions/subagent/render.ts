@@ -146,6 +146,9 @@ function expandedRunSection(container: Container, run: SubagentRun, theme: Theme
   container.addChild(new Spacer(1));
   container.addChild(new Text(`${runIcon(run, theme)} ${theme.fg('toolTitle', theme.bold(run.agent))}`, 0, 0));
   container.addChild(new Text(theme.fg('muted', 'Task: ') + theme.fg('dim', run.task), 0, 0));
+  if (run.sessionFile) {
+    container.addChild(new Text(theme.fg('muted', 'Session: ') + theme.fg('dim', run.sessionFile), 0, 0));
+  }
   if (isFailedRun(run) && run.errorMessage) {
     container.addChild(new Text(theme.fg('error', `Error: ${run.errorMessage}`), 0, 0));
   }
@@ -229,6 +232,7 @@ export function renderSubagentResult(
   if (run.exitCode !== null) {
     const usageStr = formatUsageStats(run.usage);
     if (usageStr) text += `\n${theme.fg('dim', usageStr)}`;
+    if (run.sessionFile) text += `\n${theme.fg('dim', `session: ${run.sessionFile}`)}`;
   }
   return new Text(text, 0, 0);
 }

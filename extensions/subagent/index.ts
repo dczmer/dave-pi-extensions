@@ -11,8 +11,17 @@ import { StringEnum } from '@earendil-works/pi-ai';
 import { Type } from 'typebox';
 import { discoverAgents, resolveAgentDirs, type AgentConfig, type AgentScope } from './agents.ts';
 import { renderSubagentCall, renderSubagentResult, type SubagentCallArgs, type SubagentDetails } from './render.ts';
-import { getFinalOutput, isFailedRun, runSubagent, type RunSubagentOptions, type SubagentRun } from './runner.ts';
+import {
+  getFinalOutput,
+  isFailedRun,
+  runSubagent,
+  zeroUsage,
+  type RunSubagentOptions,
+  type SubagentRun,
+} from './runner.ts';
 import { appendDelegationRules } from './delegation-rules.ts';
+import { createRunDir, resolveRunsRoot, sweepOldRuns } from './run-store.ts';
+import { FLEET_WIDGET_KEY, formatFleetLines } from './widget.ts';
 
 /** Maximum number of tasks accepted in one parallel call. */
 export const MAX_PARALLEL_TASKS = 8;
@@ -81,11 +90,29 @@ function runOutput(run: SubagentRun): string {
 }
 
 /** Factory with injectable environment (tests pass a fake env; no process.env mutation). */
-export function createSubagentExtension(env: NodeJS.ProcessEnv) {
+export interface SubagentDeps {
+  /** Injectable runner (tests pass a fake that never spawns). */
+  runSubagent?: typeof runSubagent;
+  /**
+   * Run the retention sweep on extension load (default true). Tests pass
+   * false so loading the extension never touches the real
+   * ~/.pi/agent/subagent-runs directory.
+   */
+  sweepOnLoad?: boolean;
+}
+
+export function createSubagentExtension(env: NodeJS.ProcessEnv, deps: SubagentDeps = {}) {
   return function (pi: ExtensionAPI) {
     // Inside a spawned child, only the companion extension's tools are
     // wanted; never allow a subagent to spawn its own subagents.
     if (env.PI_SUBAGENT_CHILD) return;
+
+    // Sweep run dirs from previous sessions once per load. Synchronous and
+    // best-effort; with timestamp-prefixed names this touches only entries
+    // older than the retention window. Runs after the child guard so
+    // children never sweep their siblings' live sessions.
+    const runsRoot = resolveRunsRoot(env);
+    if (deps.sweepOnLoad ?? true) sweepOldRuns(runsRoot);
 
     // Teach the primary session when and how to delegate. Children never
     // reach this registration (guard above), so child sessions stay free
@@ -201,13 +228,19 @@ export function createSubagentExtension(env: NodeJS.ProcessEnv) {
           if (ctx.hasUI) ctx.ui.setStatus('subagent', text);
         };
 
+        const updateFleet = (runs: SubagentRun[]) => {
+          if (!ctx.hasUI) return;
+          ctx.ui.setWidget(FLEET_WIDGET_KEY, formatFleetLines(runs, ctx.ui.theme), { placement: 'belowEditor' });
+        };
+
+        const runImpl = deps.runSubagent ?? runSubagent;
         const runOne = (
           agent: AgentConfig,
           task: string,
           cwd: string,
           onProgress?: (run: SubagentRun) => void,
         ): Promise<SubagentRun> =>
-          runSubagent({
+          runImpl({
             agent,
             task,
             cwd,
@@ -216,6 +249,7 @@ export function createSubagentExtension(env: NodeJS.ProcessEnv) {
             signal,
             ui: relayUi,
             hasRelayUI: ctx.hasUI,
+            sessionDir: createRunDir(runsRoot, agent.name),
             ...(onProgress !== undefined ? { onProgress } : {}),
           });
 
@@ -225,8 +259,19 @@ export function createSubagentExtension(env: NodeJS.ProcessEnv) {
             const a = agent!;
             const update = emitUpdate;
             setStatus(`subagent(${a.name}): starting...`);
+            updateFleet([
+              {
+                agent: a.name,
+                task: request.task,
+                statusLine: '',
+                messages: [],
+                usage: zeroUsage(),
+                exitCode: null,
+              },
+            ]);
             const run = await runOne(a, request.task, request.cwd ?? ctx.cwd, (r) => {
               setStatus(`subagent(${a.name}): ${r.statusLine}`);
+              updateFleet([r]);
               update?.('single', [r], r.statusLine || '(running...)');
             });
             const details = makeDetails('single')([run]);
@@ -249,6 +294,7 @@ export function createSubagentExtension(env: NodeJS.ProcessEnv) {
           const emitParallel = () => {
             const done = allRuns.filter((r) => r.exitCode !== null).length;
             setStatus(`subagent: ${done}/${allRuns.length} done`);
+            updateFleet(allRuns);
             emitUpdate?.('parallel', [...allRuns], `Parallel: ${done}/${allRuns.length} done`);
           };
           emitParallel();
@@ -279,6 +325,7 @@ export function createSubagentExtension(env: NodeJS.ProcessEnv) {
           };
         } finally {
           setStatus(undefined);
+          if (ctx.hasUI) ctx.ui.setWidget(FLEET_WIDGET_KEY, undefined);
         }
       },
 

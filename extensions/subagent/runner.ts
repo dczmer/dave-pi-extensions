@@ -49,6 +49,8 @@ export interface SubagentRun {
   exitCode: number | null;
   stopReason?: string;
   errorMessage?: string;
+  /** Absolute path of the child's persisted session file, when session persistence is enabled. */
+  sessionFile?: string;
 }
 
 /** Options for {@link runSubagent}. */
@@ -75,6 +77,19 @@ export interface RunSubagentOptions {
   dialogTimeoutMs?: number | undefined;
   onProgress?: (run: SubagentRun) => void;
   spawnFn?: SpawnFn;
+  /**
+   * When set, the child runs with `--session-dir <sessionDir>` instead of
+   * `--no-session`, persisting its session for post-hoc inspection
+   * (`pi --resume <sessionFile>`). After `agent_settled` the runner asks
+   * the child for its session file path via `get_session_stats`.
+   */
+  sessionDir?: string | undefined;
+  /**
+   * Maximum time to wait for the `get_session_stats` response after
+   * `agent_settled` before shutting the child down without a session
+   * path. Defaults to {@link DEFAULT_STATS_TIMEOUT_MS}.
+   */
+  statsTimeoutMs?: number | undefined;
 }
 
 /** Create a zeroed usage accumulator. */
@@ -143,6 +158,9 @@ type UiRelay = RunSubagentOptions['ui'];
 
 /** Default ceiling for {@link RunSubagentOptions.dialogTimeoutMs}: 10 minutes. */
 const DEFAULT_DIALOG_TIMEOUT_MS = 10 * 60 * 1000;
+
+/** Default ceiling for {@link RunSubagentOptions.statsTimeoutMs}: 2 seconds. */
+const DEFAULT_STATS_TIMEOUT_MS = 2000;
 
 /**
  * Process-wide mutex serializing dialog relays to the parent TUI, shared
@@ -309,17 +327,20 @@ async function relayDialog(
 function driveChild(proc: ChildProcess, run: SubagentRun, opts: RunSubagentOptions): Promise<void> {
   return new Promise((resolve) => {
     const PROMPT_ID = 'prompt-1';
+    const STATS_ID = 'stats-1';
     const progress = createProgressState();
     let buffer = '';
     let stderr = '';
     let settled = false;
     let finished = false;
     let abortTimer: NodeJS.Timeout | undefined;
+    let statsTimer: NodeJS.Timeout | undefined;
 
     const finish = () => {
       if (finished) return;
       finished = true;
       if (abortTimer) clearTimeout(abortTimer);
+      if (statsTimer) clearTimeout(statsTimer);
       if (opts.signal) opts.signal.removeEventListener('abort', onAbort);
       resolve();
     };
@@ -352,6 +373,17 @@ function driveChild(proc: ChildProcess, run: SubagentRun, opts: RunSubagentOptio
       run.errorMessage = 'Subagent was aborted';
       writeRecord({ type: 'abort' });
       killProc();
+    };
+
+    const shutdownChild = () => {
+      if (statsTimer) clearTimeout(statsTimer);
+      // Orderly RPC shutdown: closing stdin asks the idle child to exit.
+      try {
+        proc.stdin?.end();
+      } catch {
+        /* already closed */
+      }
+      finish();
     };
 
     const handleEvent = (event: Record<string, unknown>) => {
@@ -387,13 +419,16 @@ function driveChild(proc: ChildProcess, run: SubagentRun, opts: RunSubagentOptio
       if (event.type === 'agent_settled') {
         settled = true;
         run.exitCode = run.exitCode ?? 0;
-        // Orderly RPC shutdown: closing stdin asks the idle child to exit.
-        try {
-          proc.stdin?.end();
-        } catch {
-          /* already closed */
+        if (opts.sessionDir === undefined) {
+          shutdownChild();
+          return;
         }
-        finish();
+        // Persisted session: ask the idle child for its session file path
+        // before shutdown. Bounded by a timeout so a child that never
+        // answers cannot wedge the run.
+        writeRecord({ id: STATS_ID, type: 'get_session_stats' });
+        statsTimer = setTimeout(shutdownChild, opts.statsTimeoutMs ?? DEFAULT_STATS_TIMEOUT_MS);
+        statsTimer.unref?.();
       }
     };
 
@@ -423,6 +458,15 @@ function driveChild(proc: ChildProcess, run: SubagentRun, opts: RunSubagentOptio
           killProc();
           finish();
         }
+        return;
+      }
+
+      if (record.type === 'response' && record.id === STATS_ID) {
+        const data = record.data as { sessionFile?: unknown } | undefined;
+        if (record.success === true && typeof data?.sessionFile === 'string') {
+          run.sessionFile = data.sessionFile;
+        }
+        shutdownChild();
         return;
       }
 
@@ -495,7 +539,13 @@ export async function runSubagent(opts: RunSubagentOptions): Promise<SubagentRun
     exitCode: null,
   };
 
-  const args: string[] = ['--mode', 'rpc', '--no-session', '--name', agent.name];
+  const args: string[] = [
+    '--mode',
+    'rpc',
+    ...(opts.sessionDir ? ['--session-dir', opts.sessionDir] : ['--no-session']),
+    '--name',
+    agent.name,
+  ];
   if (opts.model) args.push('--model', opts.model);
   if (opts.thinkingLevel) args.push('--thinking', opts.thinkingLevel);
   if (agent.tools && agent.tools.length > 0) args.push('--tools', agent.tools.join(','));
