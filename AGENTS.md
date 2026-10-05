@@ -4,25 +4,22 @@
 
 Pi package bundling extensions, themes, prompts for pi coding agent.
 
-## Environment
+## Stack
 
-- **Nix**: Flake-based devShell in `flake.nix`
-- **Node.js**: Runtime and test runner for all code
-- **Runtime / Peer Dependencies**:
-  - `@earendil-works/pi-coding-agent` — Pi coding agent peer dependency
-  - `@earendil-works/pi-ai` — Pi AI SDK types peer dependency
-  - `@earendil-works/pi-tui` — Pi TUI components peer dependency
-  - `bash-parser` — Runtime dependency for accurate parsing of complex bash command strings
-- **Dev Dependencies**:
-  - `@earendil-works/pi-coding-agent`, `@earendil-works/pi-ai`, `@earendil-works/pi-tui` — pinned to the installed pi runtime version (`0.85.1`) for typechecking and tests
-  - `@types/node` — Node.js types
-  - `typescript` — TypeScript compiler
-  - `@eslint/js`, `eslint`, `prettier`, `typescript-eslint`, `typescript-language-server` — Linting and formatting
-- No other runtime deps; keep dependencies minimal
+- Nix, NodeJS
+- Prefer the repo's existing libraries over reaching for a new dependency.
 
 ## Dependencies
 
 Node modules managed at project root only. All extensions use shared dependencies from project `package.json`. No `package.json` in extension directories.
+
+## What burned us before
+
+- Past incident: a migration reported "completed" while 14% of rows were silently skipped. Verify row counts.
+
+## Keep this file honest
+
+- When you get corrected, add the lesson to this file (update AGENTS.md) so the next session starts ahead.
 
 ### Test Isolation (CRITICAL)
 
